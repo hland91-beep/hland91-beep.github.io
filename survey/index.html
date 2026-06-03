@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+<title>상담 전 자산현황 설문 — Risolve</title>
+<style>
+  :root{ --p:#1d4ed8; --p2:#2563eb; --ok:#16a34a; --g:#64748b; --line:#e2e8f0; }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  body{font-family:-apple-system,'Malgun Gothic',sans-serif;margin:0;background:#f1f5f9;color:#0f172a;line-height:1.6;font-size:17px;}
+  header{background:linear-gradient(135deg,#0f2850,#1d4ed8);color:#fff;padding:24px 18px;text-align:center;}
+  header h1{font-size:20px;margin:0 0 6px;font-weight:800;}
+  header p{font-size:14px;opacity:.85;margin:0;}
+  .wrap{max-width:560px;margin:0 auto;padding:16px 14px 120px;}
+  .sec{background:#fff;border-radius:14px;padding:16px 14px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+  .sec-title{font-size:17px;font-weight:800;color:var(--p);margin:0 0 4px;}
+  .sec-sub{font-size:13px;color:var(--g);margin:0 0 12px;}
+  .q{margin-bottom:18px;}
+  .q:last-child{margin-bottom:0;}
+  .q-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;}
+  .q-label{font-size:16px;font-weight:700;}
+  .q-direct-wrap{display:flex;align-items:center;gap:4px;flex-shrink:0;}
+  .q-direct{width:76px;padding:9px 8px;border:2px solid var(--line);border-radius:10px;font-size:16px;text-align:right;}
+  .q-direct:focus{outline:none;border-color:var(--p2);}
+  .q-unit{font-size:13px;color:var(--g);min-width:20px;}
+  .q-value{font-size:13px;font-weight:700;color:var(--p);background:#eff6ff;padding:3px 9px;border-radius:6px;white-space:nowrap;}
+  .q-value:empty{display:none;}
+  .req{color:#dc2626;font-size:14px;}
+  input[type=text],input[type=tel],input[type=date]{width:100%;padding:14px;border:2px solid var(--line);border-radius:11px;font-size:17px;}
+  input:focus{outline:none;border-color:var(--p2);}
+  .opts{display:flex;flex-wrap:wrap;gap:8px;}
+  .opt{flex:1 1 auto;min-width:30%;padding:13px 8px;border:2px solid var(--line);border-radius:11px;background:#fff;font-size:15px;font-weight:600;color:#334155;cursor:pointer;text-align:center;}
+  .opt:active{transform:scale(.98);}
+  .opt.sel{border-color:var(--p2);background:#eff6ff;color:var(--p);box-shadow:0 0 0 2px rgba(37,99,235,.15) inset;}
+  .submit-bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:12px 14px;box-shadow:0 -2px 12px rgba(0,0,0,.08);}
+  .submit-bar .inner{max-width:560px;margin:0 auto;}
+  .btn-go{width:100%;padding:16px;background:var(--ok);color:#fff;border:none;border-radius:12px;font-size:18px;font-weight:800;cursor:pointer;}
+  .btn-go:disabled{background:#94a3b8;}
+  .note{font-size:12px;color:var(--g);text-align:center;margin-top:8px;line-height:1.5;}
+  #done{display:none;text-align:center;padding:40px 18px;}
+  #done .big{font-size:54px;}
+  #done h2{color:var(--ok);font-size:22px;margin:10px 0;}
+  #jsonbox{display:none;background:#0f172a;color:#e2e8f0;font-size:11px;font-family:monospace;padding:12px;border-radius:10px;white-space:pre-wrap;word-break:break-all;margin-top:14px;text-align:left;}
+  .copybtn{margin-top:10px;padding:12px 18px;background:var(--p);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;}
+</style>
+</head>
+<body>
+
+<!-- ⚙️ 배포 설정: Apps Script 배포 후 아래 두 값을 채우세요. 비워두면 제출 시 'JSON 복사'로 동작(수동 전달). -->
+<script>
+  window.SURVEY_POST_URL   = '';   // 예: https://script.google.com/macros/s/XXXX/exec
+  window.SURVEY_WRITE_TOKEN = '';  // 설문 전용 쓰기 토큰
+</script>
+
+<header>
+  <h1>🏦 상담 전 자산현황 설문</h1>
+  <p>상담 시간을 줄이기 위한 기초 자료입니다.<br>모르는 항목은 "모름"을 눌러도 됩니다.</p>
+</header>
+
+<div class="wrap" id="form">
+
+  <div class="sec">
+    <div class="sec-title">기본 정보</div>
+    <div class="sec-sub">상담사가 자료를 찾는 데 사용됩니다.</div>
+    <div class="q"><div class="q-label">성함 <span class="req">*</span></div><input type="text" id="f-name" placeholder="예: 홍길동"></div>
+    <div class="q"><div class="q-label">전화번호 <span class="req">*</span></div><input type="tel" id="f-phone" inputmode="numeric" placeholder="예: 010-1234-5678"></div>
+    <div class="q"><div class="q-label">생년월일</div><input type="date" id="f-birth" max="2010-12-31" min="1930-01-01"></div>
+  </div>
+
+  <div class="sec" id="sec-questions"></div>
+
+</div>
+
+<div class="submit-bar" id="bar">
+  <div class="inner">
+    <button class="btn-go" id="btn-submit" onclick="submitSurvey()">제출하기</button>
+    <div class="note">입력하신 정보는 상담 목적에만 사용되며 안전하게 보관됩니다.</div>
+  </div>
+</div>
+
+<div class="wrap" id="done">
+  <div class="big">✅</div>
+  <h2>제출이 완료되었습니다</h2>
+  <p>상담사에게 자료가 전달되었습니다.<br>상담 때 뵙겠습니다. 감사합니다 😊</p>
+  <div id="jsonbox"></div>
+  <button class="copybtn" id="copybtn" style="display:none" onclick="copyJson()">📋 내용 복사 (상담사 전달용)</button>
+</div>
+
+<script>
+// ── 금액 구간 척도 (라벨, 대표값) — 대표값/라벨 단위 = 앱 자산현황탭과 동일 ──
+//    SCALE_RE: 천만원(부동산·대출) · SCALE_FIN: 백만원(금융·연금·기타) · SCALE_MON: 만원(소득)
+//    대표값이 곧 앱 입력값(factor=1).  (참고 환산: 1억=천만원10=백만원100)
+var SCALE_RE = [['없음',0],['10 미만',5],['10~30',20],['30~50',40],['50~70',60],['70~100',85],['100~150',125],['150~200',175],['200 이상',250],['모름',null]];
+var SCALE_FIN= [['없음',0],['10 미만',5],['10~30',20],['30~50',40],['50~100',75],['100~300',200],['300~500',400],['500~1000',750],['1000 이상',1300],['모름',null]];
+var SCALE_MON= [['없음',0],['100 미만',50],['100~200',150],['200~300',250],['300~500',400],['500~700',600],['700~1000',850],['1000 이상',1300],['모름',null]];
+
+// id(앱 입력) · 라벨 · 척도 · 단위변환계수(대표값×factor = 앱 입력값)
+//  부동산/대출: 억→천만원(×10) · 금융/연금/기타: 억→백만원(×100) · 소득: 만원(×1)
+// factor=1 (설문값=앱값). unit = 앱 자산현황탭 단위.
+var GROUPS = [
+  { title:'부동산', sub:'대략적인 시세 기준', factor:1, unit:'천만원', items:[
+    ['a-home','거주 중인 주택',SCALE_RE],
+    ['a-invest-re','투자·임대용 부동산',SCALE_RE],
+    ['a-land','토지',SCALE_RE],
+    ['a-overseas-re','해외 부동산',SCALE_RE],
+  ]},
+  { title:'금융 자산', sub:'현재 보유 금액', factor:1, unit:'백만원', items:[
+    ['a-kr-stock','국내 주식·펀드',SCALE_FIN],
+    ['a-us-stock','해외 주식·ETF',SCALE_FIN],
+    ['a-bond','채권·MMF',SCALE_FIN],
+    ['a-cash','현금·예적금',SCALE_FIN],
+    ['a-cma','CMA·RP',SCALE_FIN],
+    ['a-forex','외화·달러예금',SCALE_FIN],
+  ]},
+  { title:'연금·보험', sub:'적립/예상 금액', factor:1, unit:'백만원', items:[
+    ['a-irs','연금저축·IRP',SCALE_FIN],
+    ['a-tax-free-ins','비과세 저축보험',SCALE_FIN],
+    ['a-retire-fund','퇴직금 예상액',SCALE_FIN],
+    ['a-noran','노란우산공제',SCALE_FIN],
+  ]},
+  { title:'기타 자산', sub:'', factor:1, unit:'백만원', items:[
+    ['a-membership','골프·콘도 회원권',SCALE_FIN],
+    ['a-business','사업체·지분 가치',SCALE_FIN],
+    ['a-other','기타 자산',SCALE_FIN],
+  ]},
+  { title:'대출', sub:'남은 대출 잔액', factor:1, unit:'천만원', items:[
+    ['a-loan-mortgage','주택담보대출',SCALE_RE],
+    ['a-loan-other','기타 대출',SCALE_RE],
+  ]},
+  { title:'소득·저축 (월)', sub:'한 달 기준', factor:1, unit:'만원', items:[
+    ['ta-income-amt','월 소득(세후)',SCALE_MON],
+    ['ta-income-save','월 저축·연금 납입',SCALE_MON],
+    ['n-p-income','국민연금 가입 시 평균 월소득',SCALE_MON],
+  ]},
+];
+
+var answers = {};   // id -> 앱 입력값
+var meta = {};      // id -> factor (변환용)
+var UNITS = {};     // id -> 앱 단위 (값 표시용)
+
+(function render(){
+  var host = document.getElementById('sec-questions');
+  var html = '';
+  GROUPS.forEach(function(g, gi){
+    html += '<div class="sec-title" style="margin-top:'+(gi?14:0)+'px">'+g.title+' <span style="font-size:12px;font-weight:600;color:var(--g)">(단위: '+g.unit+')</span></div>';
+    if(g.sub) html += '<div class="sec-sub">'+g.sub+'</div>';
+    g.items.forEach(function(it){
+      var id=it[0], label=it[1], scale=it[2];
+      meta[id]=g.factor;
+      var unit = g.unit;
+      UNITS[id]=unit;
+      html += '<div class="q">'
+        + '<div class="q-head"><div class="q-label">'+label+'</div>'
+        + '<div class="q-direct-wrap"><span class="q-value" data-id="'+id+'"></span><input type="number" class="q-direct" data-id="'+id+'" inputmode="decimal" min="0" step="any" placeholder="직접" oninput="onDirect(this)"><span class="q-unit">'+unit+'</span></div></div>'
+        + '<div class="opts" data-id="'+id+'">';
+      scale.forEach(function(opt,oi){
+        html += '<button type="button" class="opt" data-i="'+oi+'" onclick="pick(this)">'+opt[0]+'</button>';
+      });
+      html += '</div></div>';
+    });
+  });
+  host.innerHTML = html;
+})();
+
+// 척도 참조용 맵
+var SCALEMAP = {};
+GROUPS.forEach(function(g){ g.items.forEach(function(it){ SCALEMAP[it[0]]=it[2]; }); });
+
+// 값 표시 포맷 — 앱 자산현황탭 fmtM과 동일 규칙
+//  앱 입력값을 만원으로 환산(천만원×1000·백만원×100·만원×1) 후
+//  1억(10000만원) 이상이면 "X.XX억원", 미만이면 "X,XXX만원" (소득은 "/월" 표기)
+var TO_MAN = {'천만원':1000,'백만원':100,'만원':1};
+function fmtVal(appVal, unit){
+  var man = (parseFloat(appVal)||0) * (TO_MAN[unit]||1);
+  var abs = Math.abs(man);
+  var s = (abs>=10000) ? (abs/10000).toFixed(2)+'억원'
+                       : Math.round(abs).toLocaleString()+'만원';
+  if(unit==='만원') s += '/월';   // 소득·저축(월) 항목
+  return s;
+}
+
+// 직접입력란 왼쪽 값 배지 갱신 (앱 자산현황탭 input-value와 동일 표시)
+function updateValueDisplay(id){
+  var el = document.querySelector('.q-value[data-id="'+id+'"]');
+  if(!el) return;
+  if(answers[id]===undefined){ el.textContent=''; return; }
+  el.textContent = fmtVal(answers[id], UNITS[id]);
+}
+
+function pick(btn){
+  var row = btn.parentNode;
+  var id = row.getAttribute('data-id');
+  Array.prototype.forEach.call(row.children, function(c){ c.classList.remove('sel'); });
+  btn.classList.add('sel');
+  // 상호 배타: 버튼 선택 시 직접입력 칸 비움
+  var di = document.querySelector('.q-direct[data-id="'+id+'"]'); if(di) di.value='';
+  var i = +btn.getAttribute('data-i');
+  var rep = SCALEMAP[id][i][1];            // 대표값(억 또는 만원), null=모름
+  if(rep===null){ delete answers[id]; updateValueDisplay(id); return; }
+  answers[id] = Math.round(rep * meta[id]); // 앱 입력값으로 변환
+  updateValueDisplay(id);
+}
+
+// 직접 입력 (제목 우측 칸) — 앱과 동일 단위(천만원/백만원/만원), 입력값=앱 입력값(factor 1)
+function onDirect(input){
+  var id = input.getAttribute('data-id');
+  // 상호 배타: 직접 입력 시 같은 항목 버튼 선택 해제
+  var row = document.querySelector('.opts[data-id="'+id+'"]');
+  if(row) Array.prototype.forEach.call(row.children, function(c){ c.classList.remove('sel'); });
+  var v = parseFloat(input.value);
+  if(input.value==='' || isNaN(v) || v<0){ delete answers[id]; updateValueDisplay(id); return; }
+  answers[id] = Math.round(v * meta[id]);
+  updateValueDisplay(id);
+}
+
+function submitSurvey(){
+  var name=(document.getElementById('f-name').value||'').trim();
+  var phone=(document.getElementById('f-phone').value||'').replace(/[^0-9]/g,'');
+  var birth=(document.getElementById('f-birth').value||'').trim();
+  if(!name){ alert('성함을 입력해 주세요.'); return; }
+  if(phone.length<9){ alert('전화번호를 정확히 입력해 주세요.'); return; }
+
+  var inputs = {};
+  inputs['client-name']=name;
+  if(birth) inputs['client-birth']=birth;
+  Object.keys(answers).forEach(function(id){ inputs[id]=answers[id]; });
+
+  var payload = { name:name, phone:phone, date:new Date().toISOString(), inputs:inputs };
+
+  var btn=document.getElementById('btn-submit');
+  btn.disabled=true; btn.textContent='전송 중...';
+
+  if(window.SURVEY_POST_URL){
+    fetch(window.SURVEY_POST_URL, {
+      method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ token: window.SURVEY_WRITE_TOKEN||'', payload: payload })
+    }).then(function(r){ return r.text(); }).then(function(){
+      showDone(false);
+    }).catch(function(){
+      // 전송 실패 → 수동 복사 폴백
+      showDone(true, payload);
+    });
+  } else {
+    // 서버 미설정 → JSON 복사 폴백(상담사가 앱에 붙여넣기)
+    showDone(true, payload);
+  }
+}
+
+function showDone(manual, payload){
+  document.getElementById('form').style.display='none';
+  document.getElementById('bar').style.display='none';
+  document.getElementById('done').style.display='block';
+  if(manual){
+    var box=document.getElementById('jsonbox');
+    box.style.display='block';
+    box.textContent=JSON.stringify(payload);
+    document.getElementById('copybtn').style.display='inline-block';
+    window.__payload=JSON.stringify(payload);
+    var h=document.querySelector('#done h2'); if(h) h.textContent='작성이 완료되었습니다';
+    var p=document.querySelector('#done p'); if(p) p.innerHTML='아래 <b>내용 복사</b>를 눌러 상담사에게 전달해 주세요.';
+  }
+}
+
+function copyJson(){
+  var t=window.__payload||'';
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(function(){alert('복사되었습니다. 상담사에게 전달해 주세요.');}); }
+  else { var ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); alert('복사되었습니다.'); }
+}
+
+// 전화번호 자동 하이픈
+document.getElementById('f-phone').addEventListener('input', function(){
+  var v=this.value.replace(/[^0-9]/g,'').slice(0,11);
+  if(v.length<4) this.value=v;
+  else if(v.length<8) this.value=v.slice(0,3)+'-'+v.slice(3);
+  else this.value=v.slice(0,3)+'-'+v.slice(3,7)+'-'+v.slice(7);
+});
+</script>
+</body>
+</html>
