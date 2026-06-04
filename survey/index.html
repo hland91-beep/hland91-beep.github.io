@@ -209,7 +209,7 @@ function onDirect(input){
   if(row) Array.prototype.forEach.call(row.children, function(c){ c.classList.remove('sel'); });
   var v = parseFloat(input.value);
   if(input.value==='' || isNaN(v) || v<0){ delete answers[id]; updateValueDisplay(id); return; }
-  answers[id] = Math.round(v * meta[id]);
+  answers[id] = Math.round(v * meta[id] * 100) / 100;
   updateValueDisplay(id);
 }
 
