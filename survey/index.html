@@ -55,8 +55,11 @@
   .q-value{font-size:13px;font-weight:700;color:var(--p-d);background:var(--p-l);padding:3px 9px;border-radius:6px;white-space:nowrap;}
   .q-value:empty{display:none;}
   .req{color:var(--err);font-size:14px;}
-  input[type=text],input[type=tel],input[type=date]{width:100%;padding:14px;border:2px solid var(--line);border-radius:11px;font-size:17px;background:#fff;}
+  input[type=text],input[type=tel],input[type=date],.pens-num{width:100%;padding:14px;border:2px solid var(--line);border-radius:11px;font-size:17px;background:#fff;}
   input:focus{outline:none;border-color:var(--p);}
+  .pens-hint{font-size:13px;color:var(--g);margin-top:6px;line-height:1.5;}
+  .pens-pay-row{display:flex;align-items:center;gap:8px;}
+  .pens-pay-row .pens-num{flex:1;width:auto;}
   .opts{display:flex;flex-wrap:wrap;gap:8px;}
   .opt{flex:1 1 auto;min-width:30%;padding:13px 6px;border:2px solid var(--line);border-radius:11px;background:#fff;font-size:14px;font-weight:600;color:#44403a;cursor:pointer;text-align:center;min-height:48px;}
   .opt:active{transform:scale(.98);}
@@ -196,15 +199,20 @@ var GROUPS = [
   { title:'소득·저축 (월)', sub:'한 달 기준', factor:1, unit:'만원', items:[
     ['ta-income-amt','월 소득(세후)',SCALE_MON],
     ['ta-income-save','월 저축·연금 납입',SCALE_MON],
-    ['n-p-income','국민연금 가입 시 평균 월소득',SCALE_MON],
   ]},
 ];
+
+// ── 연금 정보 스텝 — 답변은 제출 시 앱 입력 id(n-p-*, n-gp-hire)·segs로 변환 ──
+//    GOV_JOBS의 값은 앱 공무원연금탭 #gp-job-grp 버튼 data-val과 SSOT, 변경 금지
+var PENS_TYPES = [['work','직장가입자'],['region','지역가입자'],['gov','공무원·군인·사학'],['none','가입 안 함'],['unknown','모름']];
+var GOV_JOBS = [['일반직','일반직'],['교육직','교육직'],['경찰·소방','경찰·소방'],['군인','군인'],['사학(사립교원)','사학'],['판사','판사'],['검사','검사']];
+var pens = { type:null, npsYear:'', npsPay:'', govJob:null, govYear:'' };
 
 var answers = {};   // id -> 앱 입력값 (payload 그대로 — 형식 변경 금지)
 var sels = {};      // id -> {t:'opt',i} | {t:'dir',v}  (임시저장 복원용)
 var meta = {};      // id -> factor
 var UNITS = {};     // id -> 앱 단위
-var TOTAL_STEPS = GROUPS.length + 2;   // 기본정보 + 그룹들 + 확인
+var TOTAL_STEPS = GROUPS.length + 3;   // 기본정보 + 그룹들 + 연금정보 + 확인
 var curStep = 0;
 
 // ── 그룹 렌더 (그룹당 한 스텝) ──
@@ -232,8 +240,57 @@ var curStep = 0;
     });
     html += '</div></div>';
   });
+  // 연금 정보 스텝 (그룹 다음, 확인·제출 앞) — data-step은 GROUPS 길이에 따라 동적
+  html += '<div class="step" data-step="'+(GROUPS.length+1)+'"><div class="sec">'
+    + '<div class="sec-title">국민연금·직역연금</div>'
+    + '<div class="sec-sub">납부 형태만 알려주시면 예상 연금 계산이 훨씬 정확해집니다</div>'
+    + '<div class="skip-hint">💡 모르시면 그냥 <b>다음</b>을 누르세요 — 상담 때 함께 확인하면 됩니다.</div>'
+    + '<div class="q"><div class="q-label">어떤 연금을 납부하고 계신가요?</div><div class="opts" id="pens-type">'
+    + PENS_TYPES.map(function(t){ return '<button type="button" class="opt" data-v="'+t[0]+'" onclick="pensType(this)">'+t[1]+'</button>'; }).join('')
+    + '</div></div>'
+    + '<div id="nps-detail" style="display:none">'
+    +   '<div class="q"><div class="q-label">국민연금 가입 시작 연도</div>'
+    +   '<input type="number" class="pens-num" id="pens-nps-year" inputmode="numeric" min="1960" max="2026" placeholder="예: 1995" oninput="pensInput()">'
+    +   '<div class="pens-hint">처음 직장·사업을 시작한 해 정도면 충분합니다</div></div>'
+    +   '<div class="q"><div class="q-label">국민연금 월 납입 보험료 (본인 부담)</div>'
+    +   '<div class="pens-pay-row"><input type="number" class="pens-num" id="pens-nps-pay" inputmode="decimal" min="0" placeholder="예: 25" oninput="pensInput()"><span class="q-unit">만원</span></div>'
+    +   '<div class="pens-hint">급여명세서·납부 고지서에 적힌 <b>본인 부담액</b>이면 됩니다 (직장가입자는 회사 부담분 제외 금액)</div></div>'
+    + '</div>'
+    + '<div id="gov-detail" style="display:none">'
+    +   '<div class="q"><div class="q-label">직종</div><div class="opts" id="pens-gov-job">'
+    +   GOV_JOBS.map(function(j){ return '<button type="button" class="opt" data-v="'+j[0]+'" onclick="pensJob(this)">'+j[1]+'</button>'; }).join('')
+    +   '</div></div>'
+    +   '<div class="q"><div class="q-label">임용 연도</div>'
+    +   '<input type="number" class="pens-num" id="pens-gov-year" inputmode="numeric" min="1980" max="2045" placeholder="예: 1995" oninput="pensInput()">'
+    +   '<div class="pens-hint">공무원·군인·교직원으로 처음 임용된 해</div></div>'
+    + '</div>'
+    + '</div></div>';
   host.innerHTML = html;
 })();
+
+// ── 연금 스텝 핸들러 ──
+function pensType(btn){
+  var row = document.getElementById('pens-type');
+  Array.prototype.forEach.call(row.children, function(c){ c.classList.remove('sel'); });
+  btn.classList.add('sel');
+  pens.type = btn.getAttribute('data-v');
+  document.getElementById('nps-detail').style.display = (pens.type==='work'||pens.type==='region') ? 'block' : 'none';
+  document.getElementById('gov-detail').style.display = (pens.type==='gov') ? 'block' : 'none';
+  saveDraft();
+}
+function pensJob(btn){
+  var row = document.getElementById('pens-gov-job');
+  Array.prototype.forEach.call(row.children, function(c){ c.classList.remove('sel'); });
+  btn.classList.add('sel');
+  pens.govJob = btn.getAttribute('data-v');
+  saveDraft();
+}
+function pensInput(){
+  pens.npsYear = document.getElementById('pens-nps-year').value;
+  pens.npsPay  = document.getElementById('pens-nps-pay').value;
+  pens.govYear = document.getElementById('pens-gov-year').value;
+  saveDraft();
+}
 
 var SCALEMAP = {};
 GROUPS.forEach(function(g){ g.items.forEach(function(it){ SCALEMAP[it[0]]=it[2]; }); });
@@ -298,7 +355,7 @@ function allNone(btn){
 }
 
 // ── 스텝 내비게이션 ──
-var STEP_NAMES = ['기본 정보'].concat(GROUPS.map(function(g){return g.title;})).concat(['확인·제출']);
+var STEP_NAMES = ['기본 정보'].concat(GROUPS.map(function(g){return g.title;})).concat(['연금 정보','확인·제출']);
 function goStep(n){
   if(n<0 || n>=TOTAL_STEPS) return;
   curStep = n;
@@ -340,6 +397,18 @@ function renderSummary(){
            + '<div class="sum-row"><span class="sum-k">전화번호</span><span class="sum-v">'+escHtml(document.getElementById('f-phone').value||'-')+'</span></div>';
   var birth = document.getElementById('f-birth').value;
   if(birth) html += '<div class="sum-row"><span class="sum-k">생년월일</span><span class="sum-v">'+escHtml(birth)+'</span></div>';
+  // 연금 정보 요약
+  if(pens.type){
+    var ptLabel = ''; PENS_TYPES.forEach(function(t){ if(t[0]===pens.type) ptLabel=t[1]; });
+    html += '<div class="sum-row"><span class="sum-k">연금 형태</span><span class="sum-v">'+escHtml(ptLabel)+'</span></div>';
+    if(pens.type==='work'||pens.type==='region'){
+      if(pens.npsYear) html += '<div class="sum-row"><span class="sum-k">국민연금 가입연도</span><span class="sum-v">'+escHtml(pens.npsYear)+'년</span></div>';
+      if(pens.npsPay)  html += '<div class="sum-row"><span class="sum-k">월 납입 보험료</span><span class="sum-v">'+escHtml(pens.npsPay)+'만원</span></div>';
+    } else if(pens.type==='gov'){
+      if(pens.govJob)  html += '<div class="sum-row"><span class="sum-k">직종</span><span class="sum-v">'+escHtml(pens.govJob)+'</span></div>';
+      if(pens.govYear) html += '<div class="sum-row"><span class="sum-k">임용연도</span><span class="sum-v">'+escHtml(pens.govYear)+'년</span></div>';
+    }
+  }
   var total = 0; GROUPS.forEach(function(g){ total += g.items.length; });
   var ansCnt = Object.keys(answers).length;
   html += '<div class="sum-row"><span class="sum-k">답변한 항목</span><span class="sum-v"><span class="sum-badge">'+ansCnt+'개</span></span></div>'
@@ -363,7 +432,7 @@ function saveDraft(){
       name: document.getElementById('f-name').value||'',
       phone: document.getElementById('f-phone').value||'',
       birth: document.getElementById('f-birth').value||'',
-      sels: sels, step: curStep, t: Date.now()
+      sels: sels, pens: pens, step: curStep, t: Date.now()
     }));
   }catch(e){}
 }
@@ -371,7 +440,7 @@ function loadDraft(){
   try{ var d = JSON.parse(localStorage.getItem(DRAFT_KEY)||'null'); return d; }catch(e){ return null; }
 }
 function hasContent(d){
-  return d && (d.name || d.phone || (d.sels && Object.keys(d.sels).length));
+  return d && (d.name || d.phone || (d.sels && Object.keys(d.sels).length) || (d.pens && d.pens.type));
 }
 function resumeDraft(){
   var d = loadDraft(); if(!d) { discardDraft(); return; }
@@ -388,6 +457,15 @@ function resumeDraft(){
       if(di){ di.value = s.v; onDirect(di); }
     }
   });
+  // 연금 정보 복원
+  if(d.pens){
+    if(d.pens.type){ var pb = document.querySelector('#pens-type .opt[data-v="'+d.pens.type+'"]'); if(pb) pensType(pb); }
+    if(d.pens.govJob){ var gb = document.querySelector('#pens-gov-job .opt[data-v="'+d.pens.govJob+'"]'); if(gb) pensJob(gb); }
+    document.getElementById('pens-nps-year').value = d.pens.npsYear||'';
+    document.getElementById('pens-nps-pay').value  = d.pens.npsPay||'';
+    document.getElementById('pens-gov-year').value = d.pens.govYear||'';
+    pensInput();
+  }
   document.getElementById('resume').style.display='none';
   goStep(Math.min(d.step||0, TOTAL_STEPS-1));
 }
@@ -414,7 +492,38 @@ function submitSurvey(){
   if(birth) inputs['client-birth']=birth;
   Object.keys(answers).forEach(function(id){ inputs[id]=answers[id]; });
 
+  // ── 연금 답변 → 앱 입력 id 변환 (국민연금탭 n-p-*, 공무원연금탭 n-gp-hire — SSOT) ──
+  var segs = null, pensNote = '';
+  var birthYear = birth ? parseInt(birth.slice(0,4)) : null;
+  if(pens.type==='work' || pens.type==='region'){
+    pensNote = '국민연금 ' + (pens.type==='work' ? '직장가입자' : '지역가입자');
+    var jy = parseInt(pens.npsYear);
+    if(jy>=1960 && jy<=2030){
+      pensNote += ' · ' + jy + '년 가입';
+      // 앱은 가입 '나이'를 받음 — 생년월일 있을 때만 변환 (없으면 메모로만 전달)
+      if(birthYear) inputs['n-p-start'] = Math.min(Math.max(jy - birthYear, 18), 70);
+    }
+    var pay = parseFloat(pens.npsPay);
+    if(pay>0){
+      pensNote += ' · 월 ' + pay + '만원 납입';
+      // 보험료율 9% (직장가입자 본인부담 4.5%) → 평균 기준소득월액 역산, 앱 범위 40~637만원
+      inputs['n-p-income'] = Math.min(Math.max(Math.round(pay / (pens.type==='work' ? 0.045 : 0.09)), 40), 637);
+    }
+  } else if(pens.type==='gov'){
+    pensNote = '직역연금' + (pens.govJob ? ' · ' + pens.govJob : '');
+    var hy = parseInt(pens.govYear);
+    if(hy>=1980 && hy<=2045){ inputs['n-gp-hire'] = hy; pensNote += ' · ' + hy + '년 임용'; }
+    if(pens.govJob) segs = { 'gp-job-grp': pens.govJob };
+  } else if(pens.type==='none'){
+    inputs['p-nps-enrolled'] = false;
+    pensNote = '국민연금 가입 안 함';
+  } else if(pens.type==='unknown'){
+    pensNote = '연금 형태 모름 (상담 시 확인)';
+  }
+  if(pensNote) inputs['cons-comment'] = '[설문] ' + pensNote;
+
   var payload = { name:name, phone:phone, date:new Date().toISOString(), inputs:inputs };
+  if(segs) payload.segs = segs;
 
   var btn=document.getElementById('btn-next');
   btn.disabled=true; btn.textContent='전송 중...';
