@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+<title>개원의 상담 전 사전 문진 — dd-life</title>
+<style>
+  :root{
+    --p:#008C8C; --p-d:#006b6c; --p-l:#e3f3f3;
+    --kbyellow:#FFC800; --kbyellow-d:#e6b400; --gold:#B8960C;
+    --ok:#16a34a; --err:#D94F4F;
+    --g:#73716c; --line:#e5e3dd; --bg:#F8F7F4; --ink:#1A1A1A;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  body{font-family:-apple-system,'Pretendard','Malgun Gothic','Noto Sans KR',sans-serif;margin:0;background:var(--bg);color:var(--ink);line-height:1.6;font-size:17px;}
+
+  /* ── 상단 고정: 헤더 + 진행률 ── */
+  .top{position:sticky;top:0;z-index:20;}
+  header{background:var(--p);color:#fff;padding:14px 18px 12px;text-align:center;}
+  header h1{font-size:18px;margin:0;font-weight:800;letter-spacing:-.3px;}
+  .prog{background:#fff;border-bottom:1px solid var(--line);padding:10px 16px 12px;}
+  .prog-label{display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:var(--p-d);margin-bottom:6px;}
+  .prog-label .pl-r{color:var(--g);font-weight:600;}
+  .prog-bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;}
+  .prog-fill{height:100%;background:linear-gradient(90deg,var(--p),var(--kbyellow));border-radius:4px;transition:width .25s;}
+
+  .wrap{max-width:560px;margin:0 auto;padding:16px 14px 130px;}
+
+  /* ── 이어서 작성 배너 ── */
+  .resume{display:none;background:#fff;border:2px solid var(--kbyellow);border-radius:14px;padding:14px;margin-bottom:14px;}
+  .resume p{margin:0 0 10px;font-size:15px;font-weight:600;}
+  .resume .r-row{display:flex;gap:8px;}
+  .resume button{flex:1;padding:13px;border-radius:11px;font-size:15px;font-weight:700;cursor:pointer;min-height:48px;}
+  .resume .r-go{background:var(--kbyellow);border:none;color:var(--ink);}
+  .resume .r-new{background:#fff;border:2px solid var(--line);color:var(--g);}
+
+  /* ── 스텝 ── */
+  .step{display:none;}
+  .step.on{display:block;}
+  .sec{background:#fff;border-radius:14px;padding:18px 16px;margin-bottom:14px;box-shadow:0 1px 4px rgba(26,26,26,.06);}
+  .sec-title{font-size:18px;font-weight:800;color:var(--p-d);margin:0 0 4px;}
+  .sec-sub{font-size:13px;color:var(--g);margin:0 0 12px;}
+  .skip-hint{background:var(--p-l);color:var(--p-d);font-size:13px;font-weight:600;border-radius:10px;padding:9px 12px;margin:0 0 14px;line-height:1.5;}
+
+  .q{margin-bottom:20px;}
+  .q:last-child{margin-bottom:0;}
+  .q-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
+  .q-label{font-size:16px;font-weight:700;}
+  .q-hint{font-size:13px;color:var(--g);margin:-2px 0 8px;line-height:1.5;}
+  .q-direct-wrap{display:flex;align-items:center;gap:4px;flex-shrink:0;}
+  .q-direct{width:80px;padding:10px 8px;border:2px solid var(--line);border-radius:10px;font-size:16px;text-align:right;}
+  .q-direct:focus{outline:none;border-color:var(--p);}
+  .q-unit{font-size:13px;color:var(--g);min-width:20px;}
+  .q-value{font-size:13px;font-weight:700;color:var(--p-d);background:var(--p-l);padding:3px 9px;border-radius:6px;white-space:nowrap;}
+  .q-value:empty{display:none;}
+  .req{color:var(--err);font-size:14px;}
+  input[type=text],input[type=tel]{width:100%;padding:14px;border:2px solid var(--line);border-radius:11px;font-size:17px;background:#fff;}
+  input:focus{outline:none;border-color:var(--p);}
+  .opts{display:flex;flex-wrap:wrap;gap:8px;}
+  .opt{flex:1 1 auto;min-width:30%;padding:13px 6px;border:2px solid var(--line);border-radius:11px;background:#fff;font-size:14px;font-weight:600;color:#44403a;cursor:pointer;text-align:center;min-height:48px;}
+  .opt:active{transform:scale(.98);}
+  .opt.sel{border-color:var(--p);background:var(--p-l);color:var(--p-d);box-shadow:0 0 0 2px rgba(0,140,140,.15) inset;}
+
+  /* ── 확인 단계 ── */
+  .sum-row{display:flex;justify-content:space-between;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line);font-size:15px;}
+  .sum-row:last-child{border-bottom:none;}
+  .sum-k{color:var(--g);flex-shrink:0;}
+  .sum-v{font-weight:700;text-align:right;word-break:break-all;}
+  .sum-badge{display:inline-block;background:var(--p-l);color:var(--p-d);font-size:13px;font-weight:700;border-radius:8px;padding:2px 10px;}
+  .notice{font-size:13px;color:var(--g);background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:14px;line-height:1.6;}
+
+  /* ── 하단 고정 내비게이션 ── */
+  .submit-bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:12px 14px calc(12px + env(safe-area-inset-bottom));box-shadow:0 -2px 12px rgba(26,26,26,.08);z-index:20;}
+  .submit-bar .inner{max-width:560px;margin:0 auto;display:flex;gap:10px;}
+  .btn-prev{flex:0 0 96px;padding:15px 0;background:#fff;border:2px solid var(--line);border-radius:12px;font-size:16px;font-weight:700;color:var(--g);cursor:pointer;min-height:52px;}
+  .btn-prev:disabled{opacity:.35;}
+  .btn-next{flex:1;padding:15px;background:var(--p);color:#fff;border:none;border-radius:12px;font-size:18px;font-weight:800;cursor:pointer;min-height:52px;}
+  .btn-next.final{background:var(--kbyellow);color:var(--ink);}
+  .btn-next:disabled{background:#b9b5ad;color:#fff;}
+  .note{font-size:12px;color:var(--g);text-align:center;margin-top:8px;line-height:1.5;}
+
+  #done{display:none;text-align:center;padding:40px 18px;}
+  #done .big{font-size:54px;}
+  #done h2{color:var(--p-d);font-size:22px;margin:10px 0;}
+  #done .disclaim{font-size:12px;color:var(--g);margin-top:20px;line-height:1.6;}
+  .sharebtn{width:100%;margin-top:18px;padding:16px;background:var(--p);color:#fff;border:none;border-radius:12px;font-size:17px;font-weight:800;cursor:pointer;min-height:52px;}
+  #jsondetails{margin-top:18px;text-align:left;}
+  #jsondetails summary{cursor:pointer;color:var(--g);font-size:13px;text-align:center;padding:8px;list-style:none;}
+  #jsondetails summary::-webkit-details-marker{display:none;}
+  #jsonbox{background:#1f1e1c;color:#e5e3dd;font-size:11px;font-family:monospace;padding:12px;border-radius:10px;white-space:pre-wrap;word-break:break-all;margin-top:10px;text-align:left;}
+  .copybtn{width:100%;margin-top:10px;padding:14px 20px;background:var(--kbyellow);color:var(--ink);border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;min-height:48px;}
+</style>
+</head>
+<body>
+
+<!-- ⚙️ 배포 설정: Apps Script 배포 후 아래 두 값을 채우세요. 비워두면 제출 시 'JSON 복사'로 동작(수동 전달). -->
+<script>
+  window.SURVEY_POST_URL   = '';   // 예: https://script.google.com/macros/s/XXXX/exec
+  window.SURVEY_WRITE_TOKEN = '';  // 문진 전용 쓰기 토큰
+</script>
+
+<div class="top">
+  <header><h1>🩺 개원의 상담 전 사전 문진</h1></header>
+  <div class="prog">
+    <div class="prog-label"><span id="prog-step">1/6 · 기본 정보</span><span class="pl-r" id="prog-pct"></span></div>
+    <div class="prog-bar"><div class="prog-fill" id="prog-fill" style="width:5%"></div></div>
+  </div>
+</div>
+
+<div class="wrap" id="form">
+
+  <div class="resume" id="resume">
+    <p>✍️ 작성하시던 내용이 있습니다.</p>
+    <div class="r-row">
+      <button class="r-go" onclick="resumeDraft()">이어서 작성</button>
+      <button class="r-new" onclick="discardDraft()">새로 작성</button>
+    </div>
+  </div>
+
+  <!-- 단계 0: 기본 정보 -->
+  <div class="step on" data-step="0">
+    <div class="sec">
+      <div class="sec-title">기본 정보</div>
+      <div class="sec-sub">상담사가 상담을 준비하는 데 사용됩니다. 3분이면 끝나요 😊</div>
+      <div class="q"><div class="q-label">성함 <span class="req">*</span></div><input type="text" id="f-name" placeholder="예: 홍길동"></div>
+      <div class="q"><div class="q-label">병(의)원명 <span class="req">*</span></div><input type="text" id="f-clinic" placeholder="예: OO의원 · OO치과의원"></div>
+
+      <!-- 🚨 진료과는 필수다. 이 문진이 진료과를 묻지 않던 시절, 상담사 앱은 반입값이 없으면
+           select 기본값(치과)으로 조용히 접혀 **비치과 원장에게 치과 실측 사고통계**
+           (니들스틱 93.5%·근골격계 35.94%·임플란트 41.8%)를 붙였다.
+           「기타·잘 모르겠음」은 키를 빼지 않는다 — 빼면 그 옛 경로로 정확히 되돌아간다.
+           코드표에 없는 값 'other' 를 실어 앱이 fail-closed(진료과 미확인)로 떨어지게 한다. -->
+      <div class="q">
+        <div class="q-label">진료과 <span class="req">*</span></div>
+        <div class="q-hint">진단에 쓰는 사고 통계가 진료과별로 다릅니다. 확실하지 않으면 «기타·잘 모르겠음»을 눌러주세요 — 상담 때 함께 확인합니다.</div>
+        <div class="opts" data-id="md-specialty">
+          <button type="button" class="opt" data-v="dental"  onclick="pickChoice(this)">치과</button>
+          <button type="button" class="opt" data-v="medical" onclick="pickChoice(this)">의과 (치과 외)</button>
+          <button type="button" class="opt" data-v="other"   onclick="pickChoice(this)">기타·잘 모르겠음</button>
+        </div>
+        <div class="q-hint" id="sp-prefill-note" style="display:none;color:var(--p-d);font-weight:600">상담사가 미리 골라 두었습니다 — 다르면 바꿔 주세요.</div>
+      </div>
+
+      <div class="q"><div class="q-label">개원일 <span style="font-size:13px;color:var(--g);font-weight:500">(연도만 적어도 됩니다)</span></div><input type="text" id="f-open" inputmode="numeric" placeholder="예: 2015 또는 2015-03"></div>
+      <div class="q"><div class="q-label">휴대전화 <span class="req">*</span></div><input type="tel" id="f-phone" inputmode="numeric" placeholder="예: 010-1234-5678"></div>
+    </div>
+  </div>
+
+  <!-- 단계 1~4: 문진 그룹 (JS 렌더) -->
+  <div id="sec-questions"></div>
+
+  <!-- 마지막 단계: 확인·제출 -->
+  <div class="step" data-step="last">
+    <div class="sec">
+      <div class="sec-title">작성 내용 확인</div>
+      <div class="sec-sub">아래 내용으로 제출됩니다. 수정하려면 [이전]을 누르세요.</div>
+      <div id="summary"></div>
+      <div class="skip-hint" style="margin-top:14px">답하지 않은 항목은 "모름"으로 전달되며, 상담 때 함께 확인하면 됩니다.</div>
+      <div class="notice">제출하시면 작성 내용이 <b>담당 상담사의 응답 시트(비공개)</b>로 전송되며, <b>상담 준비 목적</b>에만 사용됩니다.<br>본 문진은 상담 준비용이며 세무·법률 자문이 아닙니다.</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="submit-bar" id="bar">
+  <div class="inner">
+    <button class="btn-prev" id="btn-prev" onclick="goStep(curStep-1)">← 이전</button>
+    <button class="btn-next" id="btn-next" onclick="nextStep()">다음 →</button>
+  </div>
+  <div class="note" id="bar-note">작성 내용은 담당 상담사에게만 전달되며 상담 준비 목적에만 사용됩니다.</div>
+</div>
+
+<div class="wrap" id="done">
+  <div class="big">✅</div>
+  <h2 id="done-h2">제출이 완료되었습니다</h2>
+  <p id="done-p">상담사에게 자료가 전달되었습니다.<br>상담 때 뵙겠습니다. 감사합니다 😊</p>
+  <button class="sharebtn" id="sharebtn" style="display:none" onclick="shareResult()">📤 상담사에게 바로 보내기</button>
+  <details id="jsondetails" style="display:none">
+    <summary>전송이 잘 안 되면 여기를 눌러 직접 복사하세요</summary>
+    <div id="jsonbox"></div>
+    <button class="copybtn" id="copybtn" onclick="copyJson()">📋 내용 복사하기</button>
+  </details>
+  <p class="disclaim">본 문진은 상담 준비용이며 세무·법률 자문이 아닙니다.<br>작성 내용은 담당 상담사의 응답 시트(비공개)로 전송되어 상담 준비 목적에만 사용됩니다.</p>
+</div>
+
+<script>
+// ── 금액 구간 척도 — 단위는 전부 「만원」 통일 (store-app 개원의 탭(tab-doctor) 반입 계약 v1 확정) ──
+//    대표값(만원)은 구간 중앙값 부근. '모름'은 null → 해당 키를 payload에 넣지 않음(원본과 동일 규칙).
+var A_STAFF = [['없음(원장만)',0],['1~2명',2],['3~4명',4],['5~9명',7],['10명 이상',12],['모름',null]];
+var A_REV   = [['1억 미만',5000],['1~3억',20000],['3~5억',40000],['5~7억',60000],['7~10억',85000],['10~15억',125000],['15억 이상',175000],['모름',null]];
+var A_BIZ   = [['5천만 미만',2500],['5천만~1억',7500],['1~1.5억',12500],['1.5~2억',17500],['2~3억',25000],['3억 이상',40000],['모름',null]];
+var A_INC   = [['5천만 미만',2500],['5천만~1억',7500],['1~2억',15000],['2~3억',25000],['3~5억',40000],['5억 이상',60000],['모름',null]];
+var A_PEN   = [['없음',0],['300만 이하',150],['300~600만',450],['600~900만',750],['900만 초과',1200],['모름',null]];
+
+// ── 선택형 보기 — [라벨, 저장 코드]. 코드는 README 매핑표와 SSOT ──
+var C_ENROLL  = [['가입','enrolled'],['미가입','none'],['모름','unknown']];
+var C_HAVE    = [['보유','have'],['미보유','none'],['모름','unknown']];
+var C_NORAN   = [['납입 중','paying'],['납입 안 함','none'],['모름','unknown']];
+var C_UNTIL   = [['~55세','u55'],['60세 전후','a60'],['65세 전후','a65'],['70세 이후','a70'],['아직 모름','unknown']];   // UI는 구간 선택, 제출 시 md-ret-age 대푯값 숫자로 변환
+var C_EXIT    = [['양수도','transfer'],['폐업','close'],['승계','succession'],['아직 모름','unknown']];
+
+// ── 문진 스텝 정의 — 필드 키 = store-app 개원의 탭(tab-doctor) 실물 입력 id(md-*) 항등 매핑 (치과원장 체크리스트 시트① 구조 계승) ──
+//    type: 'amt'(구간+직접입력, 숫자) / 'choice'(단일선택, 코드) / 'text'(자유입력)
+var STEPS = [
+  { token:'1', title:'병(의)원 규모', sub:'대략적인 수준이면 충분합니다', qs:[
+    {id:'md-staff-count', label:'상시근로자 수 (원장 제외)', type:'amt', unit:'명', scale:A_STAFF,
+     hint:'위생사·간호조무사·데스크 등 고용 인원 대략'},
+    {id:'md-annual-revenue', label:'연 매출(수입금액) — 만원', type:'amt', unit:'만원', scale:A_REV,
+     hint:'최근 1년 기준 대략적인 금액'},
+    {id:'md-business-income', label:'사업소득금액 — 만원', type:'amt', unit:'만원', scale:A_BIZ,
+     hint:'종합소득세 신고서의 사업소득금액(수입금액 − 필요경비). 모르시면 "모름"'},
+    {id:'md-annual-income', label:'연 소득(대략) — 만원', type:'amt', unit:'만원', scale:A_INC,
+     hint:'본인이 체감하는 연간 소득 수준이면 됩니다'},
+  ]},
+  { token:'2', title:'보장 현황', sub:'가입·보유 여부만 눌러주세요', qs:[
+    {id:'md-sanjae', label:'중소기업 사업주 산재보험', type:'choice', opts:C_ENROLL,
+     hint:'직원용 산재보험과 별개로, 사업주 본인이 선택 가입하는 제도입니다'},
+    {id:'md-goyong', label:'자영업자 고용보험', type:'choice', opts:C_ENROLL,
+     hint:'사업주 본인 명의로 선택 가입하는 고용보험'},
+    {id:'md-medical-liability', label:'의료배상책임보험', type:'choice', opts:C_HAVE,
+     hint:'진료 관련 배상책임을 보장하는 계약 보유 여부'},
+    {id:'md-facility-liability', label:'시설 배상 담보 (화재·누수 등)', type:'choice', opts:C_HAVE,
+     hint:'병(의)원 시설에서 생긴 제3자 피해를 보장하는 담보'},
+    {id:'md-disability-cover', label:'상해·질병 후유장해 담보', type:'choice', opts:C_HAVE,
+     hint:'원장 본인 앞으로 가입된 후유장해 보장 여부'},
+  ]},
+  { token:'3', title:'절세·공제 현황', sub:'', qs:[
+    {id:'md-noran', label:'노란우산공제', type:'choice', opts:C_NORAN},
+    {id:'md-pension-annual', label:'연금저축·IRP 연간 납입액 — 만원', type:'amt', unit:'만원', scale:A_PEN,
+     hint:'두 계좌 합산, 1년 납입액 기준. 구간으로 골라도 됩니다'},
+  ]},
+  { token:'4', title:'앞으로의 계획', sub:'', qs:[
+    {id:'md-ret-age', label:'몇 세까지 지금 강도로 진료할 생각이신가요?', type:'choice', opts:C_UNTIL},
+    {id:'md-exit-plan', label:'은퇴 방식은 어떻게 생각하고 계신가요?', type:'choice', opts:C_EXIT,
+     hint:'양수도(병원을 넘김) · 폐업 · 승계(가족·후배)'},
+    {id:'md-consult-topic', label:'상담에서 꼭 다루고 싶은 것 1가지 (선택)', type:'text',
+     ph:'예: 직원 퇴직금 준비'},
+  ]},
+];
+
+var answers = {};   // id -> 숫자 값 (amt형, 만원·명)
+var choices = {};   // id -> 코드 (choice형)
+var texts   = {};   // id -> 문자열 (text형)
+var sels    = {};   // id -> {t:'opt',i} | {t:'dir',v} | {t:'choice',v} | {t:'text',v}  (임시저장 복원용)
+var UNITS   = {};   // id -> 단위
+var LABELS  = {};   // id -> 라벨 (요약 표시용)
+var curStep = 0;
+var order = ['0'].concat(STEPS.map(function(s){ return s.token; })).concat(['last']);
+
+// 스텝 토큰(=DOM data-step 값) -> 진행률 표시용 라벨
+var STEP_NAME_MAP = {'0':'기본 정보', 'last':'확인·제출'};
+STEPS.forEach(function(s){ STEP_NAME_MAP[s.token] = s.title; });
+
+// ── 문진 렌더 (그룹당 한 스텝) ──
+(function render(){
+  var host = document.getElementById('sec-questions');
+  var html = '';
+  STEPS.forEach(function(st){
+    html += '<div class="step" data-step="'+st.token+'"><div class="sec">';
+    html += '<div class="sec-title">'+st.title+'</div>';
+    if(st.sub) html += '<div class="sec-sub">'+st.sub+'</div>';
+    html += '<div class="skip-hint">💡 모르시면 그냥 <b>다음</b>을 누르세요 — 자동으로 "모름" 처리됩니다.</div>';
+    st.qs.forEach(function(q){
+      LABELS[q.id] = q.label;
+      if(q.type==='amt'){
+        UNITS[q.id] = q.unit;
+        html += '<div class="q">'
+          + '<div class="q-head"><div class="q-label">'+q.label+'</div>'
+          + '<div class="q-direct-wrap"><span class="q-value" data-id="'+q.id+'"></span><input type="number" class="q-direct" data-id="'+q.id+'" inputmode="decimal" min="0" step="any" placeholder="직접" oninput="onDirect(this)"><span class="q-unit">'+q.unit+'</span></div></div>';
+        if(q.hint) html += '<div class="q-hint">'+q.hint+'</div>';
+        html += '<div class="opts" data-id="'+q.id+'">';
+        q.scale.forEach(function(opt,oi){
+          html += '<button type="button" class="opt" data-i="'+oi+'" onclick="pick(this)">'+opt[0]+'</button>';
+        });
+        html += '</div></div>';
+      } else if(q.type==='choice'){
+        html += '<div class="q"><div class="q-label">'+q.label+'</div>';
+        if(q.hint) html += '<div class="q-hint">'+q.hint+'</div>';
+        html += '<div class="opts" data-id="'+q.id+'">';
+        q.opts.forEach(function(opt){
+          html += '<button type="button" class="opt" data-v="'+opt[1]+'" onclick="pickChoice(this)">'+opt[0]+'</button>';
+        });
+        html += '</div></div>';
+      } else if(q.type==='text'){
+        html += '<div class="q"><div class="q-label">'+q.label+'</div>';
+        if(q.hint) html += '<div class="q-hint">'+q.hint+'</div>';
+        html += '<input type="text" data-id="'+q.id+'" maxlength="200" placeholder="'+(q.ph||'')+'" oninput="onText(this)">';
+        html += '</div>';
+      }
+    });
+    html += '</div></div>';
+  });
+  host.innerHTML = html;
+})();
+
+var SCALEMAP = {}, CHOICEMAP = {};
+STEPS.forEach(function(st){ st.qs.forEach(function(q){
+  if(q.type==='amt') SCALEMAP[q.id]=q.scale;
+  if(q.type==='choice') CHOICEMAP[q.id]=q.opts;
+});});
+
+/* 진료과는 단계 0(기본 정보)의 수기 마크업이라 위 렌더 루프가 못 줍는다 — 확인 단계 요약에서
+   코드가 아니라 라벨로 보이게 하려면 여기서 직접 등록해야 한다.
+   ⚠️ 'other' 는 상담사 앱 드롭다운에 없는 값이다. 일부러 그렇다(fail-closed 계약). */
+var C_SPECIALTY = [['치과','dental'],['의과 (치과 외)','medical'],['기타·잘 모르겠음','other']];
+CHOICEMAP['md-specialty'] = C_SPECIALTY;
+
+// 값 표시 포맷 — 만원 값을 억/만원 한글로
+function fmtVal(v, unit){
+  if(unit==='명') return Math.round(v)+'명';
+  var abs = Math.abs(parseFloat(v)||0);
+  return (abs>=10000) ? (parseFloat((abs/10000).toFixed(2)))+'억원'
+                      : Math.round(abs).toLocaleString()+'만원';
+}
+
+function updateValueDisplay(id){
+  var el = document.querySelector('.q-value[data-id="'+id+'"]');
+  if(!el) return;
+  if(answers[id]===undefined){ el.textContent=''; return; }
+  el.textContent = fmtVal(answers[id], UNITS[id]);
+}
+
+function pick(btn){
+  var row = btn.parentNode;
+  var id = row.getAttribute('data-id');
+  Array.prototype.forEach.call(row.children, function(c){ c.classList.remove('sel'); });
+  btn.classList.add('sel');
+  var di = document.querySelector('.q-direct[data-id="'+id+'"]'); if(di) di.value='';
+  var i = +btn.getAttribute('data-i');
+  var rep = SCALEMAP[id][i][1];
+  if(rep===null){ delete answers[id]; delete sels[id]; updateValueDisplay(id); saveDraft(); return; }
+  answers[id] = rep;
+  sels[id] = {t:'opt', i:i};
+  updateValueDisplay(id);
+  saveDraft();
+}
+
+function onDirect(input){
+  var id = input.getAttribute('data-id');
+  var row = document.querySelector('.opts[data-id="'+id+'"]');
+  if(row) Array.prototype.forEach.call(row.children, function(c){ c.classList.remove('sel'); });
+  var v = parseFloat(input.value);
+  if(input.value==='' || isNaN(v) || v<0){ delete answers[id]; delete sels[id]; updateValueDisplay(id); saveDraft(); return; }
+  answers[id] = Math.round(v * 100) / 100;
+  sels[id] = {t:'dir', v:input.value};
+  updateValueDisplay(id);
+  saveDraft();
+}
+
+function pickChoice(btn){
+  var row = btn.parentNode;
+  var id = row.getAttribute('data-id');
+  var v = btn.getAttribute('data-v');
+  var already = btn.classList.contains('sel');
+  Array.prototype.forEach.call(row.children, function(c){ c.classList.remove('sel'); });
+  if(already){ delete choices[id]; delete sels[id]; saveDraft(); return; }   // 재탭 = 선택 해제
+  btn.classList.add('sel');
+  choices[id] = v;
+  sels[id] = {t:'choice', v:v};
+  saveDraft();
+}
+
+function onText(input){
+  var id = input.getAttribute('data-id');
+  var v = (input.value||'').trim();
+  if(!v){ delete texts[id]; delete sels[id]; saveDraft(); return; }
+  texts[id] = v;
+  sels[id] = {t:'text', v:input.value};
+  saveDraft();
+}
+
+// ── 스텝 내비게이션 ──
+function goStep(n){
+  if(n<0 || n>=order.length) return;
+  curStep = n;
+  document.querySelectorAll('.step').forEach(function(el){ el.classList.remove('on'); });
+  var token = order[n];
+  var stepEl = document.querySelector('.step[data-step="'+token+'"]');
+  if(stepEl) stepEl.classList.add('on');
+  // 진행률
+  document.getElementById('prog-step').textContent = (n+1)+'/'+order.length+' · '+(STEP_NAME_MAP[token]||'');
+  document.getElementById('prog-pct').textContent = Math.round((n+1)/order.length*100)+'%';
+  document.getElementById('prog-fill').style.width = ((n+1)/order.length*100)+'%';
+  // 버튼 상태
+  document.getElementById('btn-prev').disabled = (n===0);
+  var next = document.getElementById('btn-next');
+  if(token==='last'){ next.textContent='제출하기'; next.classList.add('final'); renderSummary(); }
+  else { next.textContent='다음 →'; next.classList.remove('final'); }
+  document.getElementById('bar-note').textContent = (token==='last')
+    ? '작성 내용은 담당 상담사에게만 전달되며 상담 준비 목적에만 사용됩니다.'
+    : '모르는 항목은 건너뛰어도 됩니다.';
+  window.scrollTo(0,0);
+  saveDraft();
+}
+
+function nextStep(){
+  var token = order[curStep];
+  if(token==='0'){
+    var name=(document.getElementById('f-name').value||'').trim();
+    var clinic=(document.getElementById('f-clinic').value||'').trim();
+    var phone=(document.getElementById('f-phone').value||'').replace(/[^0-9]/g,'');
+    var open=(document.getElementById('f-open').value||'').trim();
+    if(!name){ alert('성함을 입력해 주세요.'); document.getElementById('f-name').focus(); return; }
+    if(!clinic){ alert('병(의)원명을 입력해 주세요.'); document.getElementById('f-clinic').focus(); return; }
+    /* 진료과는 성함·전화번호와 같은 필수다 — 어떤 사고 통계가 붙을지 가르는 축이라 비워 두면
+       상담사 쪽에서 기본값(치과)으로 접힌다. 모르면 «기타»를 누르는 것이 정답이고, 그것도 정보다. */
+    if(!choices['md-specialty']){
+      alert('진료과를 선택해 주세요. 모르시면 «기타·잘 모르겠음»을 눌러도 됩니다.');
+      var spRow=document.querySelector('.opts[data-id="md-specialty"]');
+      if(spRow&&spRow.scrollIntoView) spRow.scrollIntoView({block:'center'});
+      return;
+    }
+    if(phone.length<9){ alert('휴대전화 번호를 정확히 입력해 주세요.'); document.getElementById('f-phone').focus(); return; }
+    if(open && !/^\d{4}([./-]\d{1,2}([./-]\d{1,2})?)?$/.test(open)){
+      alert('개원일은 연도(예: 2015) 또는 연-월(예: 2015-03) 형식으로 적어주세요.');
+      document.getElementById('f-open').focus(); return;
+    }
+  }
+  if(token==='last'){ submitSurvey(); return; }
+  goStep(curStep+1);
+}
+
+// ── 확인 단계 요약 ──
+function choiceLabel(id, code){
+  var l = code;
+  (CHOICEMAP[id]||[]).forEach(function(o){ if(o[1]===code) l=o[0]; });
+  return l;
+}
+function renderSummary(){
+  var host = document.getElementById('summary');
+  var html = '<div class="sum-row"><span class="sum-k">성함</span><span class="sum-v">'+escHtml(document.getElementById('f-name').value||'-')+'</span></div>'
+           + '<div class="sum-row"><span class="sum-k">병(의)원명</span><span class="sum-v">'+escHtml(document.getElementById('f-clinic').value||'-')+'</span></div>'
+           + '<div class="sum-row"><span class="sum-k">진료과</span><span class="sum-v">'+escHtml(choiceLabel('md-specialty', choices['md-specialty']||'')||'-')+'</span></div>'
+           + '<div class="sum-row"><span class="sum-k">휴대전화</span><span class="sum-v">'+escHtml(document.getElementById('f-phone').value||'-')+'</span></div>';
+  var open = (document.getElementById('f-open').value||'').trim();
+  if(open) html += '<div class="sum-row"><span class="sum-k">개원일</span><span class="sum-v">'+escHtml(open)+'</span></div>';
+  var total = 0, ansCnt = 0;
+  STEPS.forEach(function(st){ st.qs.forEach(function(q){
+    total++;
+    if(q.type==='amt' && answers[q.id]!==undefined){
+      ansCnt++;
+      html += '<div class="sum-row"><span class="sum-k">'+escHtml(q.label)+'</span><span class="sum-v">'+escHtml(fmtVal(answers[q.id], q.unit))+'</span></div>';
+    } else if(q.type==='choice' && choices[q.id]!==undefined){
+      ansCnt++;
+      html += '<div class="sum-row"><span class="sum-k">'+escHtml(q.label)+'</span><span class="sum-v">'+escHtml(choiceLabel(q.id, choices[q.id]))+'</span></div>';
+    } else if(q.type==='text' && texts[q.id]!==undefined){
+      ansCnt++;
+      html += '<div class="sum-row"><span class="sum-k">'+escHtml(q.label)+'</span><span class="sum-v">'+escHtml(texts[q.id])+'</span></div>';
+    }
+  });});
+  html += '<div class="sum-row"><span class="sum-k">답변한 항목</span><span class="sum-v"><span class="sum-badge">'+ansCnt+'개</span></span></div>'
+        + '<div class="sum-row"><span class="sum-k">모름·건너뜀</span><span class="sum-v"><span class="sum-badge" style="background:#f2f1ec;color:var(--g)">'+(total-ansCnt)+'개</span></span></div>';
+  host.innerHTML = html;
+}
+
+function escHtml(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, function(ch){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+  });
+}
+
+// ── 자동 임시저장 (localStorage) — 원본 설문과 키를 분리해 충돌 방지 ──
+/* 2026-08-14: '__dental_survey_draft' 에서 개명. 이 페이지는 공개된 적이 없어(구 주소는 줄곧 404)
+   세상에 작성 중인 초안이 하나도 없다 → 마이그레이션 shim 을 두지 않는다.
+   실행될 수 없는 코드는 없느니만 못하다. */
+var DRAFT_KEY = '__doctor_survey_draft';
+var __booted = false;   // init 중 goStep(0)이 기존 draft를 빈 값으로 덮어쓰는 것 방지
+function saveDraft(){
+  if(!__booted) return;
+  try{
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({
+      name: document.getElementById('f-name').value||'',
+      clinic: document.getElementById('f-clinic').value||'',
+      open: document.getElementById('f-open').value||'',
+      phone: document.getElementById('f-phone').value||'',
+      sels: sels, step: curStep, t: Date.now()
+    }));
+  }catch(e){}
+}
+function loadDraft(){
+  try{ var d = JSON.parse(localStorage.getItem(DRAFT_KEY)||'null'); return d; }catch(e){ return null; }
+}
+function hasContent(d){
+  return d && (d.name || d.phone || d.clinic || (d.sels && Object.keys(d.sels).length));
+}
+function resumeDraft(){
+  var d = loadDraft(); if(!d) { discardDraft(); return; }
+  document.getElementById('f-name').value = d.name||'';
+  document.getElementById('f-clinic').value = d.clinic||'';
+  document.getElementById('f-open').value = d.open||'';
+  document.getElementById('f-phone').value = d.phone||'';
+  Object.keys(d.sels||{}).forEach(function(id){
+    var s = d.sels[id];
+    if(s.t==='opt'){
+      var b = document.querySelector('.opts[data-id="'+id+'"] .opt[data-i="'+s.i+'"]');
+      if(b) pick(b);
+    } else if(s.t==='dir'){
+      var di = document.querySelector('.q-direct[data-id="'+id+'"]');
+      if(di){ di.value = s.v; onDirect(di); }
+    } else if(s.t==='choice'){
+      var cb = document.querySelector('.opts[data-id="'+id+'"] .opt[data-v="'+s.v+'"]');
+      /* ⚠️ pickChoice 는 **토글**이다(재탭 = 선택 해제). 이미 켜져 있는 버튼에 그대로 부르면
+         복원이 오히려 선택을 지운다. ?sp= 프리필이 초안과 같은 값을 미리 눌러 둔 경우가 정확히
+         그 상황이라, 켜져 있으면 건드리지 않는다(값은 이미 choices 에 들어 있다). */
+      if(cb && !cb.classList.contains('sel')) pickChoice(cb);
+    } else if(s.t==='text'){
+      var ti = document.querySelector('input[data-id="'+id+'"]');
+      if(ti){ ti.value = s.v; onText(ti); }
+    }
+  });
+  document.getElementById('resume').style.display='none';
+  goStep(Math.min(d.step||0, order.length-1));
+}
+function discardDraft(){
+  try{ localStorage.removeItem(DRAFT_KEY); }catch(e){}
+  document.getElementById('resume').style.display='none';
+}
+
+// 기본정보 입력 시에도 임시저장
+['f-name','f-clinic','f-open'].forEach(function(id){
+  document.getElementById(id).addEventListener('input', saveDraft);
+});
+
+// ── 제출 (payload 최상위 형식 {name, phone, date, inputs} — 원본 파이프라인과 SSOT, 변경 금지) ──
+//    inputs 키 = store-app 개원의 탭(tab-doctor) 실물 입력 id(md-*) 항등 매핑 → 무매핑 반입.
+//    md-ret-age 만 예외: 구간 코드(u55/a60/a65/a70)를 대푯값 숫자(세)로 변환, unknown 은 키 제외.
+var RET_AGE_REP = { u55:55, a60:60, a65:65, a70:70 };
+function submitSurvey(){
+  var name=(document.getElementById('f-name').value||'').trim();
+  var clinic=(document.getElementById('f-clinic').value||'').trim();
+  var open=(document.getElementById('f-open').value||'').trim();
+  var phone=(document.getElementById('f-phone').value||'').replace(/[^0-9]/g,'');
+  if(!name){ alert('성함을 입력해 주세요.'); goStep(0); return; }
+  if(!clinic){ alert('병(의)원명을 입력해 주세요.'); goStep(0); return; }
+  /* nextStep 과 같은 검사를 여기서도 한 번 더 한다 — 임시저장 복원은 저장된 단계로 곧장 뛰므로
+     단계 0 의 검증을 지나치지 않고 제출에 닿을 수 있다. */
+  if(!choices['md-specialty']){ alert('진료과를 선택해 주세요. 모르시면 «기타·잘 모르겠음»을 눌러도 됩니다.'); goStep(0); return; }
+  if(phone.length<9){ alert('휴대전화 번호를 정확히 입력해 주세요.'); goStep(0); return; }
+
+  var inputs = {};
+  inputs['md-name']=name;
+  inputs['md-clinic-name']=clinic;
+  if(open) inputs['md-open-date']=open;
+  Object.keys(answers).forEach(function(id){ inputs[id]=answers[id]; });
+  Object.keys(choices).forEach(function(id){
+    if(id==='md-ret-age'){
+      var age = RET_AGE_REP[choices[id]];
+      if(age!==undefined) inputs[id]=age;   // unknown → 키 자체를 넣지 않음(tab-doctor 기본값 유지)
+      return;
+    }
+    inputs[id]=choices[id];
+  });
+  Object.keys(texts).forEach(function(id){ inputs[id]=texts[id]; });
+
+  /* survey 필드는 현재 store-app 이 읽지 않는다(_applySurveyData 소비처 0) — 사람이 읽는 식별자다. */
+  var payload = { survey:'doctor-preconsult-v1', name:name, phone:phone, date:new Date().toISOString(), inputs:inputs };
+
+  var btn=document.getElementById('btn-next');
+  btn.disabled=true; btn.textContent='전송 중...';
+
+  if(window.SURVEY_POST_URL){
+    fetch(window.SURVEY_POST_URL, {
+      method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ token: window.SURVEY_WRITE_TOKEN||'', payload: payload })
+    }).then(function(r){ return r.text(); }).then(function(){
+      showDone(false);
+    }).catch(function(){
+      showDone(true, payload);
+    });
+  } else {
+    showDone(true, payload);
+  }
+}
+
+function showDone(manual, payload){
+  try{ localStorage.removeItem(DRAFT_KEY); }catch(e){}
+  document.getElementById('form').style.display='none';
+  document.getElementById('bar').style.display='none';
+  document.querySelector('.prog').style.display='none';
+  document.getElementById('done').style.display='block';
+  if(manual){
+    var json = JSON.stringify(payload);
+    window.__payload = json;
+    document.getElementById('jsonbox').textContent = json;
+    var details = document.getElementById('jsondetails');
+    details.style.display = 'block';
+    var canShare = (typeof navigator!=='undefined' && !!navigator.share);
+    var h=document.getElementById('done-h2'); if(h) h.textContent='작성이 완료되었습니다';
+    var p=document.getElementById('done-p');
+    if(canShare){
+      document.getElementById('sharebtn').style.display='block';
+      if(p) p.innerHTML='아래 버튼 <b>한 번</b>이면 상담사에게 바로 전달됩니다.';
+    } else {
+      details.setAttribute('open','');   // 공유 미지원 환경 — 복사 상자를 바로 펼쳐 보여줌
+      if(p) p.innerHTML='아래 <b>내용 복사</b>를 눌러 상담사에게 카카오톡으로 전달해 주세요.';
+    }
+  }
+}
+
+// 📤 작성 결과를 OS 공유시트로 상담사에게 직접 전달 (미지원 시 복사로 폴백)
+function shareResult(){
+  var name=(document.getElementById('f-name').value||'').trim();
+  var text = '['+(name?name+' 원장 ':'')+'상담 전 사전 문진 결과]\n아래 내용을 상담사 앱의 "설문 불러오기"에 붙여넣어 주세요.\n\n'+(window.__payload||'');
+  if(navigator.share){
+    navigator.share({ title:'개원의 상담 전 사전 문진 결과', text: text }).catch(function(e){
+      if(e && e.name==='AbortError') return;   // 사용자가 공유 취소 — 별도 안내 불필요
+      document.getElementById('jsondetails').setAttribute('open','');
+    });
+  } else {
+    copyJson();
+  }
+}
+
+function copyJson(){
+  var t=window.__payload||'';
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(function(){alert('복사되었습니다. 상담사에게 전달해 주세요.');}); }
+  else { var ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); alert('복사되었습니다.'); }
+}
+
+// 전화번호 자동 하이픈 (원본과 동일 정규화: 숫자만·최대 11자리·3-4-4)
+document.getElementById('f-phone').addEventListener('input', function(){
+  var v=this.value.replace(/[^0-9]/g,'').slice(0,11);
+  if(v.length<4) this.value=v;
+  else if(v.length<8) this.value=v.slice(0,3)+'-'+v.slice(3);
+  else this.value=v.slice(0,3)+'-'+v.slice(3,7)+'-'+v.slice(7);
+  saveDraft();
+});
+
+/* ?sp=dental|medical — 상담사가 이미 아는 진료과를 미리 눌러 둔다.
+   🚨 **미리 고르기만 하고 숨기지 않는다.** 감추고 건너뛰면 「상담사의 짐작」이 「원장의 답」으로
+      둔갑하는데, 그것이 바로 이번에 고치는 결함(조용한 치과 폴백)과 같은 형태다.
+      그래서 버튼은 그대로 보이고, 미리 골랐다는 사실을 화면에 적는다.
+   코드표에 없는 값(예: ?sp=derma)은 무시한다 — 없는 선택지를 만들지 않는다. */
+function applySpecialtyFromUrl(){
+  var m=(location.search||'').match(/[?&]sp=([a-z]+)/i);
+  if(!m) return;
+  var v=String(m[1]).toLowerCase();
+  var btn=document.querySelector('.opts[data-id="md-specialty"] .opt[data-v="'+v+'"]');
+  if(!btn) return;                       /* 모르는 코드 — 원장이 직접 고른다 */
+  pickChoice(btn);
+  var note=document.getElementById('sp-prefill-note');
+  if(note) note.style.display='block';
+}
+
+// ── 초기화: 임시저장 복원 배너 ──
+(function init(){
+  goStep(0);
+  applySpecialtyFromUrl();
+  var d = loadDraft();
+  if(hasContent(d)) document.getElementById('resume').style.display='block';
+  __booted = true;
+})();
+</script>
+</body>
+</html>

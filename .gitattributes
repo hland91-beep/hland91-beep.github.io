@@ -1,0 +1,9 @@
+# 개행 자동 변환을 끈다.
+#
+# 이 레포의 파일은 전부 LF 로 커밋돼 있는데, 전역 설정이 core.autocrlf=true 다.
+# .gitattributes 가 없으면 **다시 clone 하는 순간** 작업 트리가 CRLF 로 바뀌고,
+# 그러면 배포 스크립트(store-app/scripts/deploy-survey.ps1)가 LF 원본을 덮어쓸 때마다
+# 「내용은 같은데 파일은 다르다」가 되어 스테이징·해시 대조가 이유 없이 어긋난다.
+#
+# 내용이 바뀔 때만 파일이 바뀌어야 한다. store-app 레포도 같은 이유로 같은 한 줄을 둔다.
+* -text
