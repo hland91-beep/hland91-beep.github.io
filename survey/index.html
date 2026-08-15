@@ -111,6 +111,15 @@
   .ir-note{font-size:13px;color:var(--g);line-height:1.65;margin-top:12px;}
   .ir-cta{background:#fff8dd;border:1px solid var(--kbyellow-d);border-radius:12px;padding:13px 14px;margin-top:14px;font-size:14px;color:#4a3b00;line-height:1.65;}
   .ir-disc{font-size:11px;color:#a09c94;line-height:1.6;margin-top:12px;}
+  .ir-save{width:100%;margin-top:12px;padding:15px;background:#fff;border:2px solid var(--p);border-radius:12px;color:var(--p-d);font-size:16px;font-weight:800;cursor:pointer;min-height:52px;}
+  .ir-save:disabled{opacity:.6;}
+
+  /* ── 확인 단계: 항목별 수정 동선 ── */
+  .sum-sec{border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px;background:#fff;}
+  .sum-sec-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;}
+  .sum-sec-t{font-size:15px;font-weight:800;color:var(--p-d);}
+  .sum-edit{flex-shrink:0;padding:7px 14px;background:var(--p-l);border:1.5px solid var(--p);border-radius:9px;color:var(--p-d);font-size:13px;font-weight:800;cursor:pointer;min-height:38px;}
+  .sum-empty{font-size:13px;color:var(--g);padding:4px 2px;}
 
   /* ── 자산 유형 선택(카테고리 사전선택) ── */
   .cat-card{display:flex;align-items:center;gap:10px;width:100%;padding:14px;border:2px solid var(--line);border-radius:12px;background:#fff;margin-bottom:8px;cursor:pointer;text-align:left;font-size:15px;font-weight:700;color:#44403a;}
@@ -548,11 +557,12 @@ function goStep(n){
   // 버튼 상태
   document.getElementById('btn-prev').disabled = (n===0);
   var next = document.getElementById('btn-next');
-  if(token==='last'){ next.textContent='제출하기'; next.classList.add('final'); renderSummary(); }
+  if(token==='last'){ next.textContent='제출하기'; next.classList.add('final'); backToSummary=false; renderSummary(); }
+  else if(backToSummary){ next.textContent='✓ 확인 화면으로'; next.classList.remove('final'); }
   else { next.textContent='다음 →'; next.classList.remove('final'); }
   document.getElementById('bar-note').textContent = (token==='last')
     ? '입력하신 정보는 상담 목적에만 사용되며 안전하게 보관됩니다.'
-    : '모르는 항목은 건너뛰어도 됩니다.';
+    : (backToSummary ? '고치신 뒤 위 버튼을 누르면 확인 화면으로 돌아갑니다.' : '모르는 항목은 건너뛰어도 됩니다.');
   window.scrollTo(0,0);
   saveDraft();
 }
@@ -567,45 +577,114 @@ function nextStep(){
   }
   if(token==='catsel'){ order = buildOrder(); }   // 선택 반영해 이후 스텝 재구성
   if(token==='last'){ submitSurvey(); return; }
+  /* 확인 화면에서 「수정」으로 온 경우 — 중간 스텝을 다시 다 지나오게 하지 않고 곧장 돌려보낸다.
+     ⚠️ order 는 위에서 catsel 을 지난 뒤 재구성됐을 수 있으므로 여기서 다시 찾는다. */
+  if(backToSummary){
+    var li = order.indexOf('last');
+    if(li >= 0){ goStep(li); return; }
+  }
   goStep(curStep+1);
 }
 
-// ── 확인 단계 요약 ──
+// ── 확인 단계 요약 ────────────────────────────────────────────────────────
+//
+// 🔑 **여기서 고칠 수 있어야 한다.** 예전에는 답한 항목의 개수만 보여 줬는데, 그러면
+//    「내가 뭘 눌렀더라」를 확인하려고 [이전]을 여러 번 눌러 거슬러 올라가야 했다.
+//    답을 전부 펼쳐 보여 주고, 묶음마다 그 스텝으로 곧장 가는 「수정」을 둔다.
+// 🔑 수정하러 갔다가 **한 번에 돌아온다** — 되돌아올 때 다음 버튼이 「확인 화면으로」가 된다.
+//    안 그러면 중간 스텝들을 전부 다시 눌러 지나와야 한다.
+
+var backToSummary = false;   // 확인 화면에서 「수정」으로 빠져나간 상태인가
+
+function gotoToken(token){
+  var i = order.indexOf(String(token));
+  if(i < 0) return;
+  backToSummary = true;
+  goStep(i);
+}
+
 function renderSummary(){
   var host = document.getElementById('summary');
-  var html = '<div class="sum-row"><span class="sum-k">성함</span><span class="sum-v">'+escHtml(document.getElementById('f-name').value||'-')+'</span></div>'
-           + '<div class="sum-row"><span class="sum-k">전화번호</span><span class="sum-v">'+escHtml(document.getElementById('f-phone').value||'-')+'</span></div>';
-  var birth = document.getElementById('f-birth').value;
-  if(birth) html += '<div class="sum-row"><span class="sum-k">생년월일</span><span class="sum-v">'+escHtml(birth)+'</span></div>';
-  // 연금 정보 요약
-  if(pens.type){
-    var ptLabel = ''; PENS_TYPES.forEach(function(t){ if(t[0]===pens.type) ptLabel=t[1]; });
-    html += '<div class="sum-row"><span class="sum-k">연금 형태</span><span class="sum-v">'+escHtml(ptLabel)+'</span></div>';
-    if(pens.type==='work'||pens.type==='region'){
-      if(pens.npsYear) html += '<div class="sum-row"><span class="sum-k">국민연금 가입연도</span><span class="sum-v">'+escHtml(pens.npsYear)+'년</span></div>';
-      if(pens.npsAge)  html += '<div class="sum-row"><span class="sum-k">가입 시작 나이</span><span class="sum-v">'+escHtml(pens.npsAge)+'세</span></div>';
-      if(pens.npsPay)  html += '<div class="sum-row"><span class="sum-k">월 납입 보험료</span><span class="sum-v">'+escHtml(pens.npsPay)+'만원</span></div>';
-      if(pens.npsKnown) html += '<div class="sum-row"><span class="sum-k">📬 예상 월 수령액</span><span class="sum-v">'+escHtml(pens.npsKnown)+'만원 <span style="font-size:12px;color:var(--g);font-weight:500">('+(pens.npsKnownBasis==='future'?'미래가치':'현재가치')+')</span></span></div>';
-    } else if(pens.type==='gov'){
-      if(pens.govJob)  html += '<div class="sum-row"><span class="sum-k">직종</span><span class="sum-v">'+escHtml(pens.govJob)+'</span></div>';
-      if(pens.govYear) html += '<div class="sum-row"><span class="sum-k">임용연도</span><span class="sum-v">'+escHtml(pens.govYear)+'년</span></div>';
-    }
+  var h = '';
+  function row(k, v){
+    return '<div class="sum-row"><span class="sum-k">'+escHtml(k)+'</span><span class="sum-v">'+v+'</span></div>';
   }
-  // 은퇴 계획 — 답한 것만 싣는다(「아직 모름」은 answers 에 없다)
-  RETIRE_ITEMS.forEach(function(it){
-    if(answers[it[0]]===undefined) return;
-    var k = (it[0]==='c-ret-age') ? '은퇴 예정 나이' : '은퇴 후 월 생활비';
-    html += '<div class="sum-row"><span class="sum-k">'+k+'</span><span class="sum-v">'+escHtml(fmtVal(answers[it[0]], it[2]))+'</span></div>';
+  function sec(title, token, rowsHtml, emptyMsg){
+    h += '<div class="sum-sec"><div class="sum-sec-h"><span class="sum-sec-t">'+escHtml(title)+'</span>'
+       + '<button type="button" class="sum-edit" data-goto="'+escHtml(String(token))+'">✏️ 수정</button></div>'
+       + (rowsHtml ? rowsHtml : '<div class="sum-empty">'+escHtml(emptyMsg||'답하지 않으셨습니다 — 「모름」으로 전달됩니다')+'</div>')
+       + '</div>';
+  }
+
+  // ── 기본 정보 ──
+  var birth = document.getElementById('f-birth').value;
+  sec('기본 정보', '0',
+      row('성함', escHtml(document.getElementById('f-name').value||'-'))
+    + row('전화번호', escHtml(document.getElementById('f-phone').value||'-'))
+    + (birth ? row('생년월일', escHtml(birth)) : '')
+    + (birth ? '' : '<div class="sum-empty">생년월일 — 적어 주시면 은퇴까지 남은 기간이 정확히 계산됩니다</div>'));
+
+  // ── 자산 그룹 ──
+  GROUPS.forEach(function(g, gi){
+    if(catChecked['g'+gi] === false){
+      sec(g.title, 'catsel', '', '「해당 없음」으로 선택하신 유형입니다 — 0원으로 계산됩니다');
+      return;
+    }
+    var rows = '', unknown = 0;
+    g.items.forEach(function(it){
+      if(answers[it[0]] === undefined){ unknown++; return; }
+      rows += row(it[1], escHtml(fmtVal(answers[it[0]], g.unit)));
+    });
+    if(rows && unknown) rows += '<div class="sum-empty">그 밖에 '+unknown+'개 항목은 「모름」</div>';
+    sec(g.title, String(gi+1), rows);
   });
+
+  // ── 연금 정보 ──
+  if(catChecked['pens'] !== false){
+    var pr = '';
+    if(pens.type){
+      var ptLabel = ''; PENS_TYPES.forEach(function(t){ if(t[0]===pens.type) ptLabel=t[1]; });
+      pr += row('연금 형태', escHtml(ptLabel));
+      if(pens.type==='work'||pens.type==='region'){
+        if(pens.npsYear)  pr += row('국민연금 가입연도', escHtml(pens.npsYear)+'년');
+        if(pens.npsAge)   pr += row('가입 시작 나이', escHtml(pens.npsAge)+'세');
+        if(pens.npsPay)   pr += row('월 납입 보험료', escHtml(pens.npsPay)+'만원');
+        if(pens.npsKnown) pr += row('📬 예상 월 수령액', escHtml(pens.npsKnown)+'만원 <span style="font-size:12px;color:var(--g);font-weight:500">('+(pens.npsKnownBasis==='future'?'미래가치':'현재가치')+')</span>');
+      } else if(pens.type==='gov'){
+        if(pens.govJob)  pr += row('직종', escHtml(pens.govJob));
+        if(pens.govYear) pr += row('임용연도', escHtml(pens.govYear)+'년');
+      }
+    }
+    sec('국민연금·직역연금', PENS_STEP, pr);
+  }
+
+  // ── 은퇴 계획 ──
+  var rr = '';
+  RETIRE_ITEMS.forEach(function(it){
+    var k = (it[0]==='c-ret-age') ? '은퇴 예정 나이' : '은퇴 후 월 생활비';
+    rr += (answers[it[0]] === undefined)
+        ? row(k, '<span style="color:var(--g);font-weight:600">아직 모름</span>')
+        : row(k, escHtml(fmtVal(answers[it[0]], it[2])));
+  });
+  sec('은퇴 계획', RETIRE_STEP, rr);
+
+  // ── 전체 집계 ──
   // 🚨 분모에 은퇴 계획 2문항을 더한다 — 안 더하면 그 답이 ansCnt 에만 잡혀 「모름·건너뜀」이 음수가 된다
   var total = RETIRE_ITEMS.length;
   GROUPS.forEach(function(g,gi){ if(catChecked['g'+gi]!==false) total += g.items.length; });
   var ansCnt = Object.keys(answers).length;
-  html += '<div class="sum-row"><span class="sum-k">답변한 항목</span><span class="sum-v"><span class="sum-badge">'+ansCnt+'개</span></span></div>'
-        + '<div class="sum-row"><span class="sum-k">모름·건너뜀</span><span class="sum-v"><span class="sum-badge" style="background:#f2f1ec;color:var(--g)">'+(total-ansCnt)+'개</span></span></div>';
+  h += '<div class="sum-sec">'
+     + row('답변한 항목', '<span class="sum-badge">'+ansCnt+'개</span>')
+     + row('모름·건너뜀', '<span class="sum-badge" style="background:#f2f1ec;color:var(--g)">'+Math.max(0, total-ansCnt)+'개</span>');
   var skipped = CATS.filter(function(c){ return catChecked[c.key]===false; }).map(function(c){ return c.label; });
-  if(skipped.length) html += '<div class="sum-row"><span class="sum-k">선택 안 한 유형</span><span class="sum-v" style="font-weight:600;color:var(--g)">'+escHtml(skipped.join(', '))+'</span></div>';
-  host.innerHTML = html;
+  if(skipped.length) h += row('선택 안 한 유형', '<span style="font-weight:600;color:var(--g)">'+escHtml(skipped.join(', '))+'</span>');
+  h += '</div>';
+
+  host.innerHTML = h;
+  // ⚠️ 인라인 onclick 에 값을 문자열로 넣지 않는다 — 데이터에 따옴표가 섞이면 통째로 깨진다
+  host.querySelectorAll('[data-goto]').forEach(function(b){
+    b.addEventListener('click', function(){ gotoToken(b.getAttribute('data-goto')); });
+  });
 }
 
 function escHtml(s){
@@ -836,11 +915,9 @@ function instaAge(s){
   return (a >= 0 && a <= 120) ? a : null;
 }
 
-function renderInstaReport(){
-  var host = document.getElementById('insta-report');
-  if(!host) return;
-  var nm = (document.getElementById('f-name').value||'').trim();
-
+/** 요약에 필요한 값을 한 곳에서 만든다 — 화면 카드와 이미지 저장이 **같은 함수**를 쓴다.
+    두 곳에서 따로 계산하면 저장한 이미지와 화면이 다른 숫자를 말하게 된다. */
+function instaData(){
   // ── 자산·대출 ──
   var unknown = 0, sums = {}, assetMan = 0;
   INSTA_CATS.forEach(function(b){
@@ -848,7 +925,6 @@ function renderInstaReport(){
     sums[b.key] = s; unknown += s.unknown; assetMan += s.man;
   });
   var loan = instaSum(INSTA_LOAN); unknown += loan.unknown;
-  var netMan = assetMan - loan.man;
 
   // ── 소득·저축 (두 값의 뜻이 달라 그룹 합계로 묶지 않는다) ──
   var incOff = (catChecked['g'+INSTA_INCOME_GI] === false);
@@ -871,14 +947,35 @@ function renderInstaReport(){
     return anyYes ? 1 : (anyUnknown ? null : 0);
   })();
   var layers = [L1, L2, L3];
-  var layerFilled = layers.filter(function(x){ return x === 1; }).length;
-  var layerUnknown = layers.filter(function(x){ return x === null; }).length;
 
   // ── 은퇴까지 남은 기간 — 생년월일과 은퇴 나이가 **둘 다** 있을 때만 ──
   var age = instaAge((document.getElementById('f-birth').value||'').trim());
   var retAge = (answers['c-ret-age'] === undefined) ? null : +answers['c-ret-age'];
   var living = (answers['c-monthly'] === undefined) ? null : +answers['c-monthly'];
-  var yearsLeft = (age !== null && retAge !== null) ? (retAge - age) : null;
+
+  return {
+    name: (document.getElementById('f-name').value||'').trim(),
+    sums: sums, loan: loan, assetMan: assetMan, netMan: assetMan - loan.man,
+    incomeM: incomeM, saveM: saveM,
+    savePct: (incomeM > 0 && saveM != null) ? Math.round(saveM / incomeM * 100) : null,
+    rePct: (assetMan > 0) ? Math.round(sums.re.man / assetMan * 100) : null,
+    layers: layers,
+    layerFilled: layers.filter(function(x){ return x === 1; }).length,
+    layerUnknown: layers.filter(function(x){ return x === null; }).length,
+    age: age, retAge: retAge, living: living,
+    yearsLeft: (age !== null && retAge !== null) ? (retAge - age) : null,
+    unknown: unknown
+  };
+}
+
+function renderInstaReport(){
+  var host = document.getElementById('insta-report');
+  if(!host) return;
+  var D = instaData();
+  var nm = D.name, sums = D.sums, loan = D.loan, assetMan = D.assetMan, netMan = D.netMan;
+  var incomeM = D.incomeM, saveM = D.saveM, layers = D.layers;
+  var layerFilled = D.layerFilled, layerUnknown = D.layerUnknown;
+  var age = D.age, retAge = D.retAge, living = D.living, yearsLeft = D.yearsLeft, unknown = D.unknown;
 
   // ── 조립 ──
   var h = '<div class="ir">'
@@ -934,7 +1031,147 @@ function renderInstaReport(){
     +  '지금 자산 구성의 평가, 연금 3층 점검, 은퇴 나이·생활비에 따른 필요자금, 그리고 <b>지금부터 해두면 좋은 것</b>을 시점별로 정리해 상담사가 보내 드립니다.</div>';
   h += '<div class="ir-disc">위 숫자는 오늘 눌러 주신 구간의 대표값을 단순 합산·비율 계산한 것으로, 실제 평가액과 다를 수 있습니다. 세무·법률·투자 자문이 아닙니다.</div>';
   h += '</div>';
+  h += '<button type="button" class="ir-save" onclick="saveInstaImage(this)">🖼️ 이 요약을 이미지로 저장</button>';
   host.innerHTML = h;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// 🖼️ 요약을 이미지(PNG)로 저장 — 캔버스에 직접 그린다
+// ══════════════════════════════════════════════════════════════════════════
+//
+// 🚨 **외부 라이브러리를 쓰지 않는다.** 이 페이지는 공개 정적 HTML 한 장이라는 것이 유지 조건이고,
+//    화면 캡처 라이브러리(html2canvas 등)를 붙이면 200KB 의존성과 CDN 이 함께 들어온다.
+//    Canvas 2D 로 직접 그리면 의존성 0 · 글꼴 문제 없음 · 결과가 기기와 무관하게 같다.
+// 🚨 숫자는 **instaData() 한 곳**에서만 가져온다 — 화면 카드와 저장 이미지가 갈리지 않게.
+function saveInstaImage(btn){
+  var D, cv, ctx;
+  var W = 1080, PAD = 72, H;
+  try {
+    D = instaData();
+  } catch(e){ alert('이미지를 만들지 못했습니다.'); return; }
+
+  /* 설명 줄을 먼저 만든 뒤 그 개수로 캔버스 높이를 정한다 — 고정 높이로 두면
+     응답이 적은 분의 이미지에 큰 여백이 남고, 많은 분의 것은 잘린다. */
+  var lines = [];
+  lines.push('연금 3층은 공적연금 · 퇴직연금 · 개인연금을 말합니다.');
+  lines.push('지금 ' + D.layerFilled + '개 층이 확인됩니다'
+    + (D.layerUnknown ? ' (' + D.layerUnknown + '개 층은 확인 필요)' : '') + '.');
+  if (D.yearsLeft !== null) {
+    lines.push(D.yearsLeft > 0
+      ? '적어 주신 은퇴 나이까지 ' + D.yearsLeft + '년 남았습니다.'
+      : '적어 주신 은퇴 나이를 이미 지나셨습니다.');
+  }
+  if (D.living !== null) lines.push('은퇴 후 필요 생활비 — 월 ' + D.living.toLocaleString() + '만원');
+  if (D.unknown > 0) lines.push('※ ' + D.unknown + '개 항목은 「모름」으로 남겨 합계에서 뺐습니다.');
+
+  //  머리 132 + 제목 100 + 순자산 244 + (분류 5줄 + 대출) 374 + 지표 180 + 설명 + 하단 176
+  H = 132 + 100 + 244 + (INSTA_CATS.length * 58 + 84) + 180 + (lines.length * 46) + 176;
+
+  try {
+    cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    ctx = cv.getContext('2d');
+  } catch(e){ alert('이미지를 만들지 못했습니다.'); return; }
+
+  var TEAL = '#008C8C', TEAL_D = '#006b6c', INK = '#1A1A1A', GRAY = '#73716c', LINE = '#e5e3dd';
+  var F = function(size, weight){ return (weight||400) + ' ' + size + 'px -apple-system, "Pretendard", "Malgun Gothic", "Noto Sans KR", sans-serif'; };
+  var txt = function(s, x, y, font, color, align){
+    ctx.font = font; ctx.fillStyle = color; ctx.textAlign = align || 'left'; ctx.fillText(s, x, y);
+  };
+
+  // 배경 · 상단 바
+  ctx.fillStyle = '#F8F7F4'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = TEAL; ctx.fillRect(0, 0, W, 132);
+  txt('상담 전 자산현황 설문', W/2, 84, F(42, 800), '#ffffff', 'center');
+
+  var y = 132 + 74;
+  txt(D.name ? (D.name + '님이 오늘 답해 주신 내용') : '오늘 답해 주신 내용', PAD, y, F(40, 800), TEAL_D);
+  y += 26;
+
+  // 순자산 큰 박스
+  ctx.fillStyle = '#e3f3f3';
+  if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(PAD, y, W - PAD*2, 200, 22); ctx.fill(); }
+  else ctx.fillRect(PAD, y, W - PAD*2, 200);
+  txt('순자산 (자산 − 대출)', W/2, y + 56, F(28, 700), TEAL_D, 'center');
+  txt(fmtMan(D.netMan), W/2, y + 124, F(72, 900), TEAL_D, 'center');
+  txt('자산 ' + fmtMan(D.assetMan) + '  ·  대출 ' + fmtMan(D.loan.man), W/2, y + 168, F(26, 500), GRAY, 'center');
+  y += 200 + 44;
+
+  // 분류별 행
+  INSTA_CATS.forEach(function(b){
+    var man = D.sums[b.key].man;
+    txt(b.label, PAD, y + 34, F(32, 500), GRAY);
+    var amt = fmtMan(man);
+    txt(amt, W - PAD, y + 34, F(34, 800), INK, 'right');
+    if (D.assetMan > 0) {
+      ctx.font = F(34, 800); var wAmt = ctx.measureText(amt).width;
+      txt(Math.round(man / D.assetMan * 100) + '%', W - PAD - wAmt - 16, y + 34, F(26, 600), GRAY, 'right');
+    }
+    y += 58;
+    ctx.strokeStyle = LINE; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(PAD, y - 12); ctx.lineTo(W - PAD, y - 12); ctx.stroke();
+  });
+  txt('대출 잔액', PAD, y + 34, F(32, 500), GRAY);
+  txt(fmtMan(D.loan.man), W - PAD, y + 34, F(34, 800), INK, 'right');
+  y += 84;
+
+  // 지표 3칸
+  var cw = (W - PAD*2 - 32) / 3;
+  [['부동산 비중', D.rePct != null ? D.rePct + '%' : '—'],
+   ['월 저축률',   D.savePct != null ? D.savePct + '%' : '확인 필요'],
+   ['연금 3층',    D.layerFilled + ' / 3']].forEach(function(p, i){
+    var x = PAD + i * (cw + 16);
+    ctx.fillStyle = '#ffffff'; ctx.strokeStyle = LINE; ctx.lineWidth = 2;
+    if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, cw, 132, 18); ctx.fill(); ctx.stroke(); }
+    else { ctx.fillRect(x, y, cw, 132); ctx.strokeRect(x, y, cw, 132); }
+    txt(p[0], x + cw/2, y + 48, F(26, 600), GRAY, 'center');
+    txt(p[1], x + cw/2, y + 100, F(40, 800), TEAL_D, 'center');
+  });
+  y += 132 + 48;
+
+  // 설명 줄 — 화면 카드와 같은 문장(태그만 제거). 줄 수는 위에서 이미 세어 높이에 반영했다.
+  lines.forEach(function(s){ txt(s, PAD, y, F(28, 500), '#4a4842'); y += 46; });
+
+  // 하단
+  y = H - 150;
+  ctx.strokeStyle = LINE; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(W - PAD, y); ctx.stroke();
+  var t = new Date();
+  txt(t.getFullYear() + '.' + String(t.getMonth()+1).padStart(2,'0') + '.' + String(t.getDate()).padStart(2,'0') + ' 작성',
+      PAD, y + 46, F(26, 700), TEAL_D);
+  txt('구간 대표값의 단순 합산입니다 · 실제 평가액과 다를 수 있습니다', PAD, y + 88, F(23, 400), GRAY);
+  txt('세무·법률·투자 자문이 아닙니다', PAD, y + 124, F(23, 400), GRAY);
+
+  // 저장 — 공유 가능하면 공유시트(모바일에서 앨범 저장이 여기서 된다), 아니면 다운로드
+  var fname = (D.name ? D.name + '님_' : '') + '자산요약_'
+    + t.getFullYear() + String(t.getMonth()+1).padStart(2,'0') + String(t.getDate()).padStart(2,'0') + '.png';
+  var label = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '이미지 만드는 중...'; }
+  cv.toBlob(function(blob){
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+    if (!blob) { alert('이미지를 만들지 못했습니다.'); return; }
+    try {
+      var file = new File([blob], fname, { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file], title: '자산현황 요약' }).catch(function(e){
+          if (e && e.name === 'AbortError') return;   // 사용자가 취소 — 안내 불필요
+          instaDownload(blob, fname);
+        });
+        return;
+      }
+    } catch(e){}
+    instaDownload(blob, fname);
+  }, 'image/png');
+}
+
+function instaDownload(blob, fname){
+  try {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = fname;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+  } catch(e){ alert('이미지 저장에 실패했습니다. 화면을 캡처해 주세요.'); }
 }
 
 function showDone(manual, payload){
