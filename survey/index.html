@@ -92,6 +92,26 @@
   #jsonbox{background:#1f1e1c;color:#e5e3dd;font-size:11px;font-family:monospace;padding:12px;border-radius:10px;white-space:pre-wrap;word-break:break-all;margin-top:10px;text-align:left;}
   .copybtn{width:100%;margin-top:10px;padding:14px 20px;background:var(--kbyellow);color:var(--ink);border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;min-height:48px;}
 
+  /* ── 제출 직후 「즉시 요약」 카드 — 답한 사람이 그 자리에서 받는 보상 ── */
+  .ir{background:#fff;border:2px solid var(--p);border-radius:16px;padding:18px 16px;margin:24px 0 0;text-align:left;box-shadow:0 2px 10px rgba(0,140,140,.08);}
+  .ir-h{font-size:12px;font-weight:800;color:var(--p);letter-spacing:.06em;}
+  .ir-t{font-size:17px;font-weight:800;color:var(--p-d);margin:2px 0 12px;}
+  .ir-net{background:var(--p-l);border-radius:12px;padding:14px;text-align:center;margin-bottom:12px;}
+  .ir-net-k{font-size:13px;font-weight:700;color:var(--p-d);}
+  .ir-net-v{font-size:27px;font-weight:900;color:var(--p-d);line-height:1.25;}
+  .ir-net-s{font-size:12px;color:var(--g);margin-top:3px;}
+  .ir-row{display:flex;justify-content:space-between;gap:10px;padding:8px 2px;border-bottom:1px solid var(--line);font-size:15px;}
+  .ir-row.last{border-bottom:none;}
+  .ir-k{color:var(--g);}
+  .ir-v{font-weight:700;text-align:right;}
+  .ir-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+  .ir-chip{flex:1 1 28%;background:#faf9f6;border:1px solid var(--line);border-radius:11px;padding:10px 6px;text-align:center;}
+  .ir-chip-k{font-size:12px;color:var(--g);font-weight:600;line-height:1.35;}
+  .ir-chip-v{font-size:17px;font-weight:800;color:var(--p-d);margin-top:2px;}
+  .ir-note{font-size:13px;color:var(--g);line-height:1.65;margin-top:12px;}
+  .ir-cta{background:#fff8dd;border:1px solid var(--kbyellow-d);border-radius:12px;padding:13px 14px;margin-top:14px;font-size:14px;color:#4a3b00;line-height:1.65;}
+  .ir-disc{font-size:11px;color:#a09c94;line-height:1.6;margin-top:12px;}
+
   /* ── 자산 유형 선택(카테고리 사전선택) ── */
   .cat-card{display:flex;align-items:center;gap:10px;width:100%;padding:14px;border:2px solid var(--line);border-radius:12px;background:#fff;margin-bottom:8px;cursor:pointer;text-align:left;font-size:15px;font-weight:700;color:#44403a;}
   .cat-card.sel{border-color:var(--p);background:var(--p-l);color:var(--p-d);}
@@ -138,7 +158,8 @@
       <div class="sec-sub">상담사가 자료를 찾는 데 사용됩니다. 1분이면 끝나요 😊</div>
       <div class="q"><div class="q-label">성함 <span class="req">*</span></div><input type="text" id="f-name" placeholder="예: 홍길동"></div>
       <div class="q"><div class="q-label">전화번호 <span class="req">*</span></div><input type="tel" id="f-phone" inputmode="numeric" placeholder="예: 010-1234-5678"></div>
-      <div class="q"><div class="q-label">생년월일 <span style="font-size:13px;color:var(--g);font-weight:500">(선택)</span></div><input type="date" id="f-birth" max="2010-12-31" min="1930-01-01"></div>
+      <div class="q"><div class="q-label">생년월일 <span style="font-size:13px;color:var(--g);font-weight:500">(선택)</span></div><input type="date" id="f-birth" max="2010-12-31" min="1930-01-01">
+        <div class="pens-hint">적어 주시면 <b>은퇴까지 남은 기간</b>과 국민연금 개시 시점이 정확히 계산됩니다</div></div>
     </div>
   </div>
 
@@ -178,6 +199,10 @@
     <div id="jsonbox"></div>
     <button class="copybtn" id="copybtn" onclick="copyJson()">📋 내용 복사하기</button>
   </details>
+  <!-- 📊 즉시 요약 — 전달 동선(위 공유·복사) **아래**에 둔다.
+       위에 두면 보상 카드가 「상담사에게 보내기」를 화면 밖으로 밀어내, 답은 받아 놓고
+       전달이 안 되는 경우가 생긴다. 보상보다 전달이 먼저다. -->
+  <div id="insta-report"></div>
 </div>
 
 <script>
@@ -225,6 +250,18 @@ var GROUPS = [
   ]},
 ];
 
+// ── 은퇴 계획 2문항 — 이 설문의 답으로 「은퇴 준비 전문가 보고서」가 작성된다 ──
+//    🚨 CATS(자산 유형 선택)에 넣지 않는다. 보고서의 두 축이라 건너뛰면 확보율·부족액을
+//       말할 수 없고, 그 자리를 앱 기본값(65세·500만원)이 조용히 메우면 고객이 답한 적 없는
+//       숫자가 「내 진단」으로 인쇄된다. 대신 각 문항에 「아직 모름」을 둬서 강요하지 않는다.
+//    대표값은 앱 입력 범위 안이어야 한다 — c-ret-age(40~80) · c-monthly(100~3000·step 5).
+var SCALE_RETAGE = [['55세 전후',55],['60세 전후',60],['65세 전후',65],['70세 이후',70],['아직 모름',null]];
+var SCALE_LIVING = [['200만원 미만',150],['200~300만',250],['300~400만',350],['400~500만',450],['500~700만',600],['700만 이상',850],['아직 모름',null]];
+var RETIRE_ITEMS = [
+  ['c-ret-age','몇 세까지 일하실 계획인가요?','세',SCALE_RETAGE,'이미 은퇴하셨다면 <b>은퇴하신 나이</b>를 눌러주세요'],
+  ['c-monthly','은퇴 후 매달 얼마면 지금처럼 지낼 수 있을까요?','만원',SCALE_LIVING,'부부 기준 <b>생활비 전체</b>입니다 — 지금 쓰시는 금액에서 자녀 교육비·대출 상환을 뺀 정도가 흔합니다']
+];
+
 // ── 연금 정보 스텝 — 답변은 제출 시 앱 입력 id(n-p-*, n-gp-hire)·segs로 변환 ──
 //    GOV_JOBS의 값은 앱 공무원연금탭 #gp-job-grp 버튼 data-val과 SSOT, 변경 금지
 var PENS_TYPES = [['work','직장가입자'],['region','지역가입자'],['gov','공무원·군인·사학'],['none','가입 안 함'],['unknown','모름']];
@@ -252,15 +289,19 @@ var CATS = [
 var catChecked = {};  // key -> false(제외) — 없으면(undefined) 기본 선택된 것으로 취급
 
 // 스텝 토큰(=DOM data-step 값) -> 진행률 표시용 라벨
+var PENS_STEP   = String(GROUPS.length+1);
+var RETIRE_STEP = String(GROUPS.length+2);
 var STEP_NAME_MAP = {'0':'기본 정보', 'catsel':'자산 유형 선택', 'last':'확인·제출'};
 GROUPS.forEach(function(g,gi){ STEP_NAME_MAP[String(gi+1)] = g.title; });
-STEP_NAME_MAP[String(GROUPS.length+1)] = '연금 정보';
+STEP_NAME_MAP[PENS_STEP]   = '연금 정보';
+STEP_NAME_MAP[RETIRE_STEP] = '은퇴 계획';
 
-// 현재 체크 상태로 실제 노출 스텝 순서를 구성 ('기본정보'·'유형선택'·'확인'은 항상 포함)
+// 현재 체크 상태로 실제 노출 스텝 순서를 구성 ('기본정보'·'유형선택'·'은퇴 계획'·'확인'은 항상 포함)
 function buildOrder(){
   var o = ['0','catsel'];
   GROUPS.forEach(function(g,gi){ if(catChecked['g'+gi]!==false) o.push(String(gi+1)); });
-  if(catChecked['pens']!==false) o.push(String(GROUPS.length+1));
+  if(catChecked['pens']!==false) o.push(PENS_STEP);
+  o.push(RETIRE_STEP);   // 🚨 항상 포함 — CATS 로 끌 수 없다(위 RETIRE_ITEMS 주석 참조)
   o.push('last');
   return o;
 }
@@ -326,6 +367,27 @@ function buildOrder(){
     +   '<div class="pens-hint">공무원·군인·교직원으로 처음 임용된 해</div></div>'
     + '</div>'
     + '</div></div>';
+  // ── 은퇴 계획 스텝 (연금 다음, 확인·제출 앞) ──
+  //    구간 선택만 둔다(직접입력 없음). 앱 입력에는 범위가 있는데(나이 40~80·생활비 100~3000)
+  //    자유 입력은 그 밖의 값을 만들고, 반입 쪽 클램프가 조용히 다른 숫자로 바꿔 놓는다.
+  html += '<div class="step" data-step="'+RETIRE_STEP+'"><div class="sec">'
+    + '<div class="sec-title">은퇴 계획</div>'
+    + '<div class="sec-sub">이 두 가지만 있으면 「지금 준비로 어디까지 가는지」까지 계산해 드립니다</div>'
+    + '<div class="skip-hint">💡 아직 안 정하셨으면 <b>아직 모름</b>을 눌러주세요 — 그래도 보고서는 나옵니다.</div>';
+  RETIRE_ITEMS.forEach(function(it){
+    var id=it[0], label=it[1], unit=it[2], scale=it[3], hint=it[4];
+    meta[id]=1;
+    UNITS[id]=unit;
+    html += '<div class="q">'
+      + '<div class="q-head"><div class="q-label">'+label+'</div>'
+      + '<div class="q-direct-wrap"><span class="q-value" data-id="'+id+'"></span></div></div>'
+      + '<div class="opts" data-id="'+id+'">'
+      + scale.map(function(opt,oi){ return '<button type="button" class="opt" data-i="'+oi+'" onclick="pick(this)">'+opt[0]+'</button>'; }).join('')
+      + '</div>'
+      + (hint ? '<div class="pens-hint">'+hint+'</div>' : '')
+      + '</div>';
+  });
+  html += '</div></div>';
   host.innerHTML = html;
 })();
 
@@ -409,10 +471,12 @@ function pensInput(){
 
 var SCALEMAP = {};
 GROUPS.forEach(function(g){ g.items.forEach(function(it){ SCALEMAP[it[0]]=it[2]; }); });
+RETIRE_ITEMS.forEach(function(it){ SCALEMAP[it[0]]=it[3]; });   // pick() 이 여기서 대표값을 읽는다
 
 // 값 표시 포맷 — 앱 자산현황탭 fmtM과 동일 규칙
 var TO_MAN = {'천만원':1000,'백만원':100,'만원':1};
 function fmtVal(appVal, unit){
+  if(unit==='세') return Math.round(parseFloat(appVal)||0) + '세';   // 금액 척도가 아니다
   var man = (parseFloat(appVal)||0) * (TO_MAN[unit]||1);
   var abs = Math.abs(man);
   var s = (abs>=10000) ? (abs/10000).toFixed(2)+'억원'
@@ -527,7 +591,15 @@ function renderSummary(){
       if(pens.govYear) html += '<div class="sum-row"><span class="sum-k">임용연도</span><span class="sum-v">'+escHtml(pens.govYear)+'년</span></div>';
     }
   }
-  var total = 0; GROUPS.forEach(function(g,gi){ if(catChecked['g'+gi]!==false) total += g.items.length; });
+  // 은퇴 계획 — 답한 것만 싣는다(「아직 모름」은 answers 에 없다)
+  RETIRE_ITEMS.forEach(function(it){
+    if(answers[it[0]]===undefined) return;
+    var k = (it[0]==='c-ret-age') ? '은퇴 예정 나이' : '은퇴 후 월 생활비';
+    html += '<div class="sum-row"><span class="sum-k">'+k+'</span><span class="sum-v">'+escHtml(fmtVal(answers[it[0]], it[2]))+'</span></div>';
+  });
+  // 🚨 분모에 은퇴 계획 2문항을 더한다 — 안 더하면 그 답이 ansCnt 에만 잡혀 「모름·건너뜀」이 음수가 된다
+  var total = RETIRE_ITEMS.length;
+  GROUPS.forEach(function(g,gi){ if(catChecked['g'+gi]!==false) total += g.items.length; });
   var ansCnt = Object.keys(answers).length;
   html += '<div class="sum-row"><span class="sum-k">답변한 항목</span><span class="sum-v"><span class="sum-badge">'+ansCnt+'개</span></span></div>'
         + '<div class="sum-row"><span class="sum-k">모름·건너뜀</span><span class="sum-v"><span class="sum-badge" style="background:#f2f1ec;color:var(--g)">'+(total-ansCnt)+'개</span></span></div>';
@@ -624,6 +696,14 @@ function submitSurvey(){
   if(birth) inputs['client-birth']=birth;
   Object.keys(answers).forEach(function(id){ inputs[id]=answers[id]; });
 
+  /* 🚨 은퇴 계획 2문항은 **숫자칸(n-) 미러와 함께** 보낸다.
+     앱의 복원 경로(_applyClientData)는 값을 꽂은 뒤 _resyncLoadedInputs 를 부르는데,
+     그 함수는 **숫자칸을 읽어 슬라이더로 밀어 넣는다**(number → range 단방향).
+     슬라이더 id(c-ret-age)만 보내면 손대지 않은 옛 숫자칸 값이 그 위를 덮어
+     **반입이 조용히 무효가 된다.** 위 국민연금 항목들이 전부 n- 로만 오가는 이유가 이것이다. */
+  if(inputs['c-ret-age']!=null) inputs['n-c-ret-age'] = inputs['c-ret-age'];
+  if(inputs['c-monthly']!=null) inputs['n-c-monthly'] = inputs['c-monthly'];
+
   // ── 연금 답변 → 앱 입력 id 변환 (국민연금탭 n-p-*, 공무원연금탭 n-gp-hire — SSOT) ──
   var segs = null, pensNote = '';
   var birthYear = birth ? parseInt(birth.slice(0,4)) : null;
@@ -666,7 +746,9 @@ function submitSurvey(){
   }
   if(pensNote) inputs['cons-comment'] = '[설문] ' + pensNote;
 
-  var payload = { name:name, phone:phone, date:new Date().toISOString(), inputs:inputs };
+  /* 출처 표식 — 앱은 이 한 글자로 「일반 설문에서 온 고객」을 판정하고, 그 판정이
+     「은퇴 준비 전문가 보고서」의 발행 조건이 된다(마흔셈은 'maheunsem', 개원의 문진은 'ddlife'). */
+  var payload = { name:name, phone:phone, date:new Date().toISOString(), source:'survey', inputs:inputs };
   if(segs) payload.segs = segs;
 
   var btn=document.getElementById('btn-next');
@@ -684,6 +766,163 @@ function submitSurvey(){
   } else {
     showDone(true, payload);
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// 📊 즉시 요약 — 답한 사람이 제출 그 자리에서 받는 보상
+// ══════════════════════════════════════════════════════════════════════════
+//
+// 🚨 **사칙연산만 쓴다.** 세법·수익률·확률·시뮬레이션을 여기 넣지 않는다.
+//   ① 이 페이지는 공개 정적 HTML 이다 — 유료 앱의 계산 로직이 여기로 나가면 안 된다.
+//   ② 합계와 비율은 어디서 계산해도 같은 값이라, 상담사가 앱에서 뽑는 정밀 보고서와
+//      **숫자가 어긋날 여지가 원리적으로 없다.** 추정이 한 줄이라도 섞이면 두 문서가 갈라지고,
+//      갈라진 두 숫자를 받은 고객은 둘 다 믿지 않게 된다.
+//
+// 🚨 **「모름」을 0 으로 더하지 않는다.** 모름은 답하지 않은 것이고, 0 은 「없다」고 답한 것이다.
+//   0 으로 합치면 총자산이 실제보다 작게 나오는데, 그 숫자가 하필 고객이 처음 보는 자기 숫자다.
+//   합계에서 빼고, 미확인 개수를 카드 아래에 따로 적는다.
+//   자산 유형 선택(catsel)에서 **끈 유형은 다르다** — 그건 「없다」는 답이므로 0 으로 센다.
+
+// GROUPS 인덱스 → 요약 묶음 (이 페이지 안의 표시용 분류 · GROUPS 를 고치면 여기도 함께 본다)
+var INSTA_ASSET   = [ {gi:0,key:'re',label:'부동산'}, {gi:1,key:'fin',label:'금융 자산'},
+                      {gi:2,key:'pen',label:'연금·보험'}, {gi:3,key:'etc',label:'기타 자산'} ];
+var INSTA_LOAN_GI = 4, INSTA_INCOME_GI = 5;
+
+function fmtMan(man){
+  var a = Math.round(Math.abs(man));
+  var sign = man < 0 ? '−' : '';
+  if(a >= 10000){ var e = a/10000; return sign + (e>=100 ? e.toFixed(0) : e.toFixed(1)).replace(/\.0$/,'') + '억원'; }
+  return sign + a.toLocaleString() + '만원';
+}
+
+/** 한 그룹의 합계(만원)·미확인 개수. 유형 자체를 선택 안 했으면 「없다」고 답한 것으로 본다. */
+function instaGroupSum(gi){
+  var g = GROUPS[gi], off = (catChecked['g'+gi] === false);
+  var man = 0, unknown = 0;
+  g.items.forEach(function(it){
+    if(off) return;                              // 유형 미선택 = 해당 없음(0)
+    var v = answers[it[0]];
+    if(v === undefined){ unknown++; return; }    // 「모름」 — 합산하지 않는다
+    man += (parseFloat(v)||0) * (TO_MAN[g.unit]||1);
+  });
+  return { man:man, unknown:unknown, off:off };
+}
+
+/** 은/는 — 받침 유무로 고른다. 「생활비은」처럼 어색한 문장이 고객 화면에 나가지 않게. */
+function josaEunNeun(s){
+  s = String(s||'');
+  var c = s.charCodeAt(s.length-1);
+  var hasJong = (c >= 0xAC00 && c <= 0xD7A3) ? ((c - 0xAC00) % 28) !== 0 : false;
+  return hasJong ? '은' : '는';
+}
+
+/** 만 나이 — 생년월일을 안 적으셨으면 null(계산하지 않는다) */
+function instaAge(s){
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s||'');
+  if(!m) return null;
+  var t = new Date(), a = t.getFullYear() - (+m[1]);
+  if((t.getMonth()+1) < (+m[2]) || ((t.getMonth()+1) === (+m[2]) && t.getDate() < (+m[3]))) a--;
+  return (a >= 0 && a <= 120) ? a : null;
+}
+
+function renderInstaReport(){
+  var host = document.getElementById('insta-report');
+  if(!host) return;
+  var nm = (document.getElementById('f-name').value||'').trim();
+
+  // ── 자산·대출 ──
+  var unknown = 0, sums = {}, assetMan = 0;
+  INSTA_ASSET.forEach(function(b){
+    var s = instaGroupSum(b.gi);
+    sums[b.key] = s; unknown += s.unknown; assetMan += s.man;
+  });
+  var loan = instaGroupSum(INSTA_LOAN_GI); unknown += loan.unknown;
+  var netMan = assetMan - loan.man;
+
+  // ── 소득·저축 (두 값의 뜻이 달라 그룹 합계로 묶지 않는다) ──
+  var incOff = (catChecked['g'+INSTA_INCOME_GI] === false);
+  var incomeM = incOff ? 0 : (answers['ta-income-amt']  === undefined ? null : +answers['ta-income-amt']);
+  var saveM   = incOff ? 0 : (answers['ta-income-save'] === undefined ? null : +answers['ta-income-save']);
+  if(incomeM === null) unknown++;
+  if(saveM   === null) unknown++;
+
+  // ── 연금 3층 — 「없다」와 「모른다」를 구분한다(null = 확인 필요) ──
+  var penOff = (catChecked['g2'] === false);
+  var L1 = (pens.type==='work'||pens.type==='region'||pens.type==='gov') ? 1 : (pens.type==='none' ? 0 : null);
+  var L2 = penOff ? 0 : (answers['a-retire-fund'] === undefined ? null : (+answers['a-retire-fund'] > 0 ? 1 : 0));
+  var L3 = (function(){
+    if(penOff) return 0;
+    var ids = ['a-irs','a-tax-free-ins','a-noran'], anyYes = false, anyUnknown = false;
+    ids.forEach(function(id){
+      if(answers[id] === undefined){ anyUnknown = true; return; }
+      if(+answers[id] > 0) anyYes = true;
+    });
+    return anyYes ? 1 : (anyUnknown ? null : 0);
+  })();
+  var layers = [L1, L2, L3];
+  var layerFilled = layers.filter(function(x){ return x === 1; }).length;
+  var layerUnknown = layers.filter(function(x){ return x === null; }).length;
+
+  // ── 은퇴까지 남은 기간 — 생년월일과 은퇴 나이가 **둘 다** 있을 때만 ──
+  var age = instaAge((document.getElementById('f-birth').value||'').trim());
+  var retAge = (answers['c-ret-age'] === undefined) ? null : +answers['c-ret-age'];
+  var living = (answers['c-monthly'] === undefined) ? null : +answers['c-monthly'];
+  var yearsLeft = (age !== null && retAge !== null) ? (retAge - age) : null;
+
+  // ── 조립 ──
+  var h = '<div class="ir">'
+    + '<div class="ir-h">MY POSITION TODAY</div>'
+    + '<div class="ir-t">' + escHtml(nm ? nm + '님이 오늘 답해 주신 내용' : '오늘 답해 주신 내용') + '</div>'
+    + '<div class="ir-net"><div class="ir-net-k">순자산 (자산 − 대출)</div>'
+    +   '<div class="ir-net-v">' + fmtMan(netMan) + '</div>'
+    +   '<div class="ir-net-s">자산 ' + fmtMan(assetMan) + ' · 대출 ' + fmtMan(loan.man) + '</div></div>';
+
+  INSTA_ASSET.forEach(function(b){
+    h += '<div class="ir-row"><span class="ir-k">' + b.label + '</span><span class="ir-v">' + fmtMan(sums[b.key].man) + '</span></div>';
+  });
+  h += '<div class="ir-row last"><span class="ir-k">대출 잔액</span><span class="ir-v">' + fmtMan(loan.man) + '</span></div>';
+
+  // 지표 3칸 — 근거가 없는 칸은 숫자를 지어내지 않고 「확인 필요」로 둔다
+  var rePct = (assetMan > 0) ? Math.round(sums.re.man / assetMan * 100) + '%' : '—';
+  var savePct = (incomeM !== null && incomeM > 0 && saveM !== null) ? Math.round(saveM / incomeM * 100) + '%' : '확인 필요';
+  h += '<div class="ir-chips">'
+    +   '<div class="ir-chip"><div class="ir-chip-k">부동산 비중</div><div class="ir-chip-v">' + rePct + '</div></div>'
+    +   '<div class="ir-chip"><div class="ir-chip-k">월 저축률</div><div class="ir-chip-v">' + savePct + '</div></div>'
+    +   '<div class="ir-chip"><div class="ir-chip-k">연금 3층</div><div class="ir-chip-v">' + layerFilled + ' / 3</div></div>'
+    + '</div>';
+
+  var lines = [];
+  lines.push('연금 3층은 <b>공적연금 · 퇴직연금 · 개인연금</b>을 말합니다. 지금 <b>' + layerFilled + '개 층</b>이 확인됩니다'
+             + (layerUnknown ? ' (' + layerUnknown + '개 층은 답변이 없어 확인이 필요합니다)' : '') + '.');
+  if(yearsLeft !== null){
+    lines.push(yearsLeft > 0
+      ? '적어 주신 은퇴 나이까지 <b>' + yearsLeft + '년</b> 남았습니다. 준비할 수 있는 기간이 그만큼입니다.'
+      : '적어 주신 은퇴 나이를 이미 지나셨습니다 — 모으는 단계가 아니라 <b>꺼내 쓰는 단계</b>의 설계가 필요합니다.');
+  } else if(retAge !== null){
+    lines.push('생년월일을 적어 주시면 은퇴까지 남은 기간을 정확히 계산해 드립니다.');
+  }
+  if(living !== null) lines.push('은퇴 후 필요 생활비는 <b>월 ' + living.toLocaleString() + '만원</b>으로 답해 주셨습니다.');
+  /* 🚨 「아직 모름」으로 남긴 축을 조용히 넘어가지 않는다 — 그 두 답이 없으면 「지금 준비로 어디까지
+     가는가」를 계산할 수 없고, 그 사실을 안 적으면 보고서에 그 장이 왜 없는지 고객이 알 길이 없다. */
+  if(retAge === null || living === null){
+    var miss = [];
+    if(retAge === null) miss.push('은퇴 시점');
+    if(living === null) miss.push('은퇴 후 생활비');
+    var phrase = miss.join('과 ');
+    lines.push('<b>' + phrase + '</b>' + josaEunNeun(phrase) + ' 아직 정하지 않으셨습니다. '
+      + (miss.length > 1 ? '이 두 가지가' : '이것이') + ' 정해지면 「지금 준비로 어디까지 가는지」까지 숫자로 나옵니다 — 상담에서 함께 정하면 됩니다.');
+  }
+  h += '<div class="ir-note">' + lines.join('<br>') + '</div>';
+
+  if(unknown > 0){
+    h += '<div class="ir-note">📝 <b>' + unknown + '개 항목</b>은 「모름」으로 남겨 두셨습니다 — 위 합계에는 넣지 않았습니다. 상담 때 함께 확인하면 숫자가 더 정확해집니다.</div>';
+  }
+
+  h += '<div class="ir-cta">💎 답해 주신 내용으로 <b>「은퇴 준비 전문가 보고서」</b>를 작성해 드립니다.<br>'
+    +  '지금 자산 구성의 평가, 연금 3층 점검, 은퇴 나이·생활비에 따른 필요자금, 그리고 <b>지금부터 해두면 좋은 것</b>을 시점별로 정리해 상담사가 보내 드립니다.</div>';
+  h += '<div class="ir-disc">위 숫자는 오늘 눌러 주신 구간의 대표값을 단순 합산·비율 계산한 것으로, 실제 평가액과 다를 수 있습니다. 세무·법률·투자 자문이 아닙니다.</div>';
+  h += '</div>';
+  host.innerHTML = h;
 }
 
 function showDone(manual, payload){
@@ -709,6 +948,9 @@ function showDone(manual, payload){
       if(p) p.innerHTML='아래 <b>내용 복사</b>를 눌러 상담사에게 카카오톡으로 전달해 주세요.';
     }
   }
+  /* 📊 즉시 요약은 전송 성패와 무관하게 그린다 — 답을 쓴 사실은 전송이 실패해도 달라지지 않는다.
+     ⚠️ 실패해도 완료 화면 자체는 살려 둔다(요약 한 장 때문에 전달 동선이 죽으면 본말전도). */
+  try{ renderInstaReport(); }catch(e){}
 }
 
 // 📤 작성 결과를 OS 공유시트로 상담사에게 직접 전달 (미지원 시 복사로 폴백)
