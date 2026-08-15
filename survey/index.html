@@ -783,10 +783,21 @@ function submitSurvey(){
 //   합계에서 빼고, 미확인 개수를 카드 아래에 따로 적는다.
 //   자산 유형 선택(catsel)에서 **끈 유형은 다르다** — 그건 「없다」는 답이므로 0 으로 센다.
 
-// GROUPS 인덱스 → 요약 묶음 (이 페이지 안의 표시용 분류 · GROUPS 를 고치면 여기도 함께 본다)
-var INSTA_ASSET   = [ {gi:0,key:'re',label:'부동산'}, {gi:1,key:'fin',label:'금융 자산'},
-                      {gi:2,key:'pen',label:'연금·보험'}, {gi:3,key:'etc',label:'기타 자산'} ];
-var INSTA_LOAN_GI = 4, INSTA_INCOME_GI = 5;
+/* 🚨 **앱 자산현황 탭의 5분류(ASSET_IDS)와 같은 묶음·같은 순서·같은 이름**이다.
+   여기서 갈리면 같은 고객이 받는 두 장 — 이 카드와 상담사가 보내는 전문가 보고서 — 이
+   서로 다른 숫자를 말한다(실측: 설문이 「금융 자산 3.1억」, 보고서가 「금융자산 5.9억」.
+   앱은 연금·보험을 금융자산에 포함하고 이 카드는 나눠 보여 줬기 때문이다).
+   ⚠️ 설문의 GROUPS 는 「금융 자산」을 한 묶음으로 묻지만, 앱은 주식·ETF 와 현금성을 나눈다.
+      그래서 gi(설문 그룹 인덱스)와 ids(앱 분류)를 따로 들고 다닌다. */
+var INSTA_CATS = [
+  { key:'re',    label:'부동산',    unit:1000, gi:0, ids:['a-home','a-invest-re','a-land','a-overseas-re'] },
+  { key:'stock', label:'주식·ETF',  unit:100,  gi:1, ids:['a-kr-stock','a-us-stock','a-bond'] },
+  { key:'cash',  label:'현금성',    unit:100,  gi:1, ids:['a-cash','a-cma','a-forex'] },
+  { key:'pen',   label:'연금·보험', unit:100,  gi:2, ids:['a-irs','a-tax-free-ins','a-retire-fund','a-noran'] },
+  { key:'etc',   label:'기타',      unit:100,  gi:3, ids:['a-membership','a-business','a-other'] }
+];
+var INSTA_LOAN    = { unit:1000, gi:4, ids:['a-loan-mortgage','a-loan-other'] };
+var INSTA_INCOME_GI = 5;
 
 function fmtMan(man){
   var a = Math.round(Math.abs(man));
@@ -795,15 +806,15 @@ function fmtMan(man){
   return sign + a.toLocaleString() + '만원';
 }
 
-/** 한 그룹의 합계(만원)·미확인 개수. 유형 자체를 선택 안 했으면 「없다」고 답한 것으로 본다. */
-function instaGroupSum(gi){
-  var g = GROUPS[gi], off = (catChecked['g'+gi] === false);
+/** 한 분류의 합계(만원)·미확인 개수. 유형 자체를 선택 안 했으면 「없다」고 답한 것으로 본다. */
+function instaSum(cat){
+  var off = (catChecked['g'+cat.gi] === false);
   var man = 0, unknown = 0;
-  g.items.forEach(function(it){
+  cat.ids.forEach(function(id){
     if(off) return;                              // 유형 미선택 = 해당 없음(0)
-    var v = answers[it[0]];
+    var v = answers[id];
     if(v === undefined){ unknown++; return; }    // 「모름」 — 합산하지 않는다
-    man += (parseFloat(v)||0) * (TO_MAN[g.unit]||1);
+    man += (parseFloat(v)||0) * cat.unit;
   });
   return { man:man, unknown:unknown, off:off };
 }
@@ -832,11 +843,11 @@ function renderInstaReport(){
 
   // ── 자산·대출 ──
   var unknown = 0, sums = {}, assetMan = 0;
-  INSTA_ASSET.forEach(function(b){
-    var s = instaGroupSum(b.gi);
+  INSTA_CATS.forEach(function(b){
+    var s = instaSum(b);
     sums[b.key] = s; unknown += s.unknown; assetMan += s.man;
   });
-  var loan = instaGroupSum(INSTA_LOAN_GI); unknown += loan.unknown;
+  var loan = instaSum(INSTA_LOAN); unknown += loan.unknown;
   var netMan = assetMan - loan.man;
 
   // ── 소득·저축 (두 값의 뜻이 달라 그룹 합계로 묶지 않는다) ──
@@ -877,8 +888,9 @@ function renderInstaReport(){
     +   '<div class="ir-net-v">' + fmtMan(netMan) + '</div>'
     +   '<div class="ir-net-s">자산 ' + fmtMan(assetMan) + ' · 대출 ' + fmtMan(loan.man) + '</div></div>';
 
-  INSTA_ASSET.forEach(function(b){
-    h += '<div class="ir-row"><span class="ir-k">' + b.label + '</span><span class="ir-v">' + fmtMan(sums[b.key].man) + '</span></div>';
+  INSTA_CATS.forEach(function(b){
+    var pct = (assetMan > 0) ? (' <span style="font-size:12px;color:var(--g);font-weight:600">' + Math.round(sums[b.key].man / assetMan * 100) + '%</span>') : '';
+    h += '<div class="ir-row"><span class="ir-k">' + b.label + '</span><span class="ir-v">' + fmtMan(sums[b.key].man) + pct + '</span></div>';
   });
   h += '<div class="ir-row last"><span class="ir-k">대출 잔액</span><span class="ir-v">' + fmtMan(loan.man) + '</span></div>';
 
