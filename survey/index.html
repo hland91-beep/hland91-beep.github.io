@@ -111,6 +111,18 @@
   .ir-note{font-size:13px;color:var(--g);line-height:1.65;margin-top:12px;}
   .ir-cta{background:#fff8dd;border:1px solid var(--kbyellow-d);border-radius:12px;padding:13px 14px;margin-top:14px;font-size:14px;color:#4a3b00;line-height:1.65;}
   .ir-disc{font-size:11px;color:#a09c94;line-height:1.6;margin-top:12px;}
+  /* ── 만든 이미지 표시 (길게 눌러 저장) ── */
+  .ii-box{background:#fff;border:2px solid var(--ok);border-radius:16px;padding:16px;margin-top:14px;text-align:left;}
+  .ii-t{font-size:16px;font-weight:800;color:var(--ok);margin-bottom:6px;}
+  .ii-tip{font-size:14px;color:var(--ink);line-height:1.65;background:#f0fdf4;border-radius:10px;padding:11px 13px;margin-bottom:12px;}
+  .ii-img{width:100%;height:auto;display:block;border:1px solid var(--line);border-radius:10px;}
+  .ii-btns{display:flex;gap:8px;margin-top:12px;}
+  .ii-share,.ii-dl{flex:1;padding:14px 8px;border-radius:11px;font-size:15px;font-weight:800;cursor:pointer;text-align:center;text-decoration:none;min-height:50px;display:flex;align-items:center;justify-content:center;}
+  .ii-share{background:var(--p);color:#fff;border:none;}
+  .ii-dl{background:#fff;border:2px solid var(--line);color:var(--g);}
+  .ii-warn{margin-top:12px;font-size:13px;line-height:1.65;color:#8a6a08;background:#fff8dd;border:1px solid var(--kbyellow-d);border-radius:10px;padding:11px 13px;}
+  .ii-note{margin-top:12px;font-size:13px;line-height:1.6;color:var(--g);}
+
   .ir-save{width:100%;margin-top:12px;padding:15px;background:#fff;border:2px solid var(--p);border-radius:12px;color:var(--p-d);font-size:16px;font-weight:800;cursor:pointer;min-height:52px;}
   .ir-save:disabled{opacity:.6;}
 
@@ -212,6 +224,8 @@
        위에 두면 보상 카드가 「상담사에게 보내기」를 화면 밖으로 밀어내, 답은 받아 놓고
        전달이 안 되는 경우가 생긴다. 보상보다 전달이 먼저다. -->
   <div id="insta-report"></div>
+  <!-- 🖼️ 만든 이미지를 여기 띄운다 — 길게 눌러 저장하는 경로가 인앱 브라우저에서 유일하게 통한다 -->
+  <div id="insta-image"></div>
 </div>
 
 <script>
@@ -1142,26 +1156,83 @@ function saveInstaImage(btn){
   txt('구간 대표값의 단순 합산입니다 · 실제 평가액과 다를 수 있습니다', PAD, y + 88, F(23, 400), GRAY);
   txt('세무·법률·투자 자문이 아닙니다', PAD, y + 124, F(23, 400), GRAY);
 
-  // 저장 — 공유 가능하면 공유시트(모바일에서 앨범 저장이 여기서 된다), 아니면 다운로드
+  /* ── 저장 ───────────────────────────────────────────────────────────────
+     🚨 **화면에 이미지를 띄우는 것이 본체다.**
+     예전에는 공유시트 → 실패하면 `<a download>` 로 끝냈는데, 그 두 경로 모두
+     **카카오톡·네이버 인앱 브라우저에서 조용히 아무 일도 하지 않는다.**
+     실제로 「저장했는데 기기에서 못 찾겠다」는 신고가 나왔다 — 눌렀는데 화면에
+     아무 변화가 없으니 성공했는지 실패했는지조차 알 수 없었다.
+
+     이미지를 화면에 그려 주면 **길게 눌러 「이미지 저장」** 이 되고, 이건 인앱 브라우저를
+     포함한 모든 모바일 브라우저에서 통하는 유일한 경로다. 공유·다운로드는 **보조**로 남긴다. */
   var fname = (D.name ? D.name + '님_' : '') + '자산요약_'
     + t.getFullYear() + String(t.getMonth()+1).padStart(2,'0') + String(t.getDate()).padStart(2,'0') + '.png';
   var label = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = '이미지 만드는 중...'; }
   cv.toBlob(function(blob){
     if (btn) { btn.disabled = false; btn.textContent = label; }
-    if (!blob) { alert('이미지를 만들지 못했습니다.'); return; }
-    try {
-      var file = new File([blob], fname, { type: 'image/png' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        navigator.share({ files: [file], title: '자산현황 요약' }).catch(function(e){
-          if (e && e.name === 'AbortError') return;   // 사용자가 취소 — 안내 불필요
-          instaDownload(blob, fname);
-        });
-        return;
-      }
-    } catch(e){}
-    instaDownload(blob, fname);
+    if (!blob) { alert('이미지를 만들지 못했습니다. 화면을 캡처해 주세요.'); return; }
+    try { showInstaImage(blob, fname); }
+    catch(e){ alert('이미지를 표시하지 못했습니다. 화면을 캡처해 주세요.'); }
   }, 'image/png');
+}
+
+/** 인앱 브라우저인가 — 다운로드가 막히는 환경. 이름까지 돌려줘 안내 문구가 실제 앱을 가리키게 한다.
+    (「카카오톡 안의 브라우저입니다」가 네이버 사용자에게 뜨면 안내를 안 믿는다) */
+function inAppBrowserName(){
+  var ua = navigator.userAgent || '';
+  if (/KAKAOTALK/i.test(ua)) return '카카오톡';
+  if (/NAVER/i.test(ua)) return '네이버';
+  if (/Instagram/i.test(ua)) return '인스타그램';
+  if (/FB_IAB|FBAN|FBAV/i.test(ua)) return '페이스북';
+  if (/Line\//i.test(ua)) return '라인';
+  if (/DaumApps|Whale/i.test(ua)) return '다음·웨일';
+  return null;
+}
+
+/** 만든 이미지를 화면에 띄운다 — 길게 눌러 저장하는 경로가 본체 */
+function showInstaImage(blob, fname){
+  var host = document.getElementById('insta-image');
+  if (!host) return;
+  // 다시 만들면 앞의 objectURL 은 놓아 준다 (여러 번 눌러도 메모리가 쌓이지 않게)
+  try { if (window.__instaUrl) URL.revokeObjectURL(window.__instaUrl); } catch(e){}
+  var url = URL.createObjectURL(blob);
+  window.__instaUrl = url;
+  var inAppName = inAppBrowserName();
+  var h = '<div class="ii-box">'
+    + '<div class="ii-t">✅ 이미지가 만들어졌습니다</div>'
+    + '<div class="ii-tip">아래 이미지를 <b>손가락으로 꾹 누른 뒤</b> <b>「이미지 저장」</b>을 선택하시면 '
+    +   '휴대폰 사진첩에 저장됩니다.</div>'
+    + '<img class="ii-img" src="' + url + '" alt="자산현황 요약 이미지">'
+    + '<div class="ii-btns">'
+    +   '<button type="button" class="ii-share" onclick="shareInstaImage()">📤 공유해서 저장</button>'
+    +   '<a class="ii-dl" href="' + url + '" download="' + escHtml(fname) + '">💾 파일로 내려받기</a>'
+    + '</div>'
+    + (inAppName
+        ? '<div class="ii-warn">⚠️ 지금 <b>' + inAppName + ' 안의 브라우저</b>로 보고 계십니다. 여기서는 「내려받기」가 동작하지 않을 수 있어요.<br>'
+          + '위 이미지를 <b>꾹 눌러 저장</b>하시거나, 오른쪽 위 <b>⋮ → 다른 브라우저로 열기</b>를 이용해 주세요.</div>'
+        : '<div class="ii-note">「내려받기」를 누르면 사진첩이 아니라 <b>다운로드 폴더</b>에 저장됩니다 — 사진첩에 넣으시려면 이미지를 꾹 눌러 저장해 주세요.</div>')
+    + '</div>';
+  host.innerHTML = h;
+  window.__instaBlob = blob; window.__instaName = fname;
+  try { host.scrollIntoView({ behavior:'smooth', block:'start' }); } catch(e){ host.scrollIntoView(); }
+}
+
+/** 보조 경로 — 공유시트(지원 기기에서는 여기서 앨범 저장이 된다) */
+function shareInstaImage(){
+  var blob = window.__instaBlob, fname = window.__instaName;
+  if (!blob) return;
+  try {
+    var file = new File([blob], fname, { type:'image/png' });
+    if (navigator.canShare && navigator.canShare({ files:[file] })) {
+      navigator.share({ files:[file], title:'자산현황 요약' }).catch(function(e){
+        if (e && e.name === 'AbortError') return;   // 사용자가 취소 — 안내 불필요
+        alert('공유가 지원되지 않는 환경입니다. 위 이미지를 꾹 눌러 저장해 주세요.');
+      });
+      return;
+    }
+  } catch(e){}
+  alert('이 브라우저는 이미지 공유를 지원하지 않습니다.\n위 이미지를 손가락으로 꾹 눌러 「이미지 저장」을 선택해 주세요.');
 }
 
 function instaDownload(blob, fname){
