@@ -1,0 +1,1467 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+<meta name="color-scheme" content="light dark">
+<title>AssetTect 글로벌 자산·보장 1분 점검</title>
+<!--
+  학회 부스용 1분 설문 · 응답 QR · 상담자 화면 — 단일 파일, 외부 참조 0, **서버 0** (A안 확정 2026-09-21)
+  데이터는 QR · 파일 · 기기 안에서만 움직인다. 서버가 하던 일의 서버 없는 대응은 이렇다:
+    응답 전달   → 응답 QR 이 답 자체를 싣는다(검사 마디로 절단·변조 차단)
+    예약 확인   → 상담자 태블릿이 「예약 카드 QR」(?b=)을 보여 주고, 참가자 폰이 그것을 찍어 카드·캘린더 파일을 받는다
+    알림        → 상담자 기기에서 문자(sms:)·공유시트로 예약 확인을 보낸다(발송 서버 없음)
+    KPI         → 응답 QR 에 「시작→QR 소요 초」가 실리고, 공용 태블릿은 시작·완료·QR 발급을 기기 카운터로 센다
+    대시보드    → 운영 노트북이 각 태블릿의 부스 JSON 을 「가져오기(병합)」해 집계한다
+
+  기획: D:\dd-life-app\docs\기획안_학회부스_QR설문상담_20260921.md §26·§28
+  구조: ?e=<행사코드>  참가자(Lead 계층)  도입 → Q1~Q10 → 결과 → 연락처·동의 → 응답 QR
+        ?r=<페이로드>  상담자(Advisor 계층) 복호 → 요약 → 방식·일정 → 메모 → 저장 → 예약 카드 QR·문자 (주소는 복호 직후 지운다)
+        ?b=<페이로드>  참가자 예약 확인 카드  (상담자 태블릿의 예약 카드 QR 을 찍으면 열린다)
+        ?c=1           상담자 홈           스캔 · 링크 붙여넣기 · 오늘 목록 · 집계 · 가져오기(병합) · 내보내기 · 기기에서 지우기
+  연계: Expert 계층(AssetTect 콘솔)에는 URL 프리셋이 아니라 **가져오기 파일**(assettect_records_export_v1)로 넘긴다 —
+        콘솔은 봉인된 로컬 파일이라 공개 주소도, URL 파라미터 해석도 없다. store-app 에는 「받은 답변 붙여넣기」 payload 로.
+  이식: [[QR]] 블록은 dd-life-app/src/js/30-qr.js 사본(전역명만 BOOTH_QR) — 정본이 갱신되면 함께 옮긴다.
+  봉인: tests/booth.test.mjs 가 [[CODEC]]·[[QR]] 블록을 잘라 vm 에서 돌린다(왕복·상한·되읽기·어휘·가져오기 형식).
+-->
+<style>
+  :root{
+    --p:#008C8C; --p-d:#006b6c; --p-l:#e3f3f3;
+    --acc:#FFC800; --ok:#16a34a; --err:#D94F4F;
+    --g:#73716c; --line:#e5e3dd; --bg:#F8F7F4; --card:#fff; --ink:#1A1A1A; --code:#1f1e1c;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --p:#3fb8b8; --p-d:#7fd6d6; --p-l:#123b3b; --g:#a8a49c; --line:#3a3936; --bg:#161615; --card:#222120; --ink:#f1efe9; --code:#0d0d0c; }
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html{font-size:17px;}
+  body{font-family:-apple-system,'Pretendard','Malgun Gothic','Noto Sans KR',sans-serif;margin:0;background:var(--bg);color:var(--ink);line-height:1.6;}
+  header{background:var(--p);color:#fff;padding:12px 18px;text-align:center;position:sticky;top:0;z-index:20;}
+  header h1{font-size:1rem;margin:0;font-weight:800;letter-spacing:-.3px;}
+  .prog{height:6px;background:var(--line);}
+  .prog i{display:block;height:100%;background:linear-gradient(90deg,var(--p),var(--acc));transition:width .25s;}
+  .wrap{max-width:560px;margin:0 auto;padding:16px 14px 40px;}
+  .sec{background:var(--card);border-radius:14px;padding:18px 16px;margin-bottom:14px;box-shadow:0 1px 4px rgba(26,26,26,.06);}
+  .eyebrow{font-size:.8rem;font-weight:700;color:var(--p-d);margin:0 0 6px;letter-spacing:.02em;}
+  h2{font-size:1.35rem;line-height:1.35;margin:0 0 10px;font-weight:800;word-break:keep-all;}
+  .lead{font-size:.95rem;color:var(--g);margin:0 0 14px;word-break:keep-all;}
+  .basis{font-size:.8rem;color:var(--g);border-top:1px dashed var(--line);padding-top:10px;margin:14px 0 0;line-height:1.55;word-break:keep-all;}
+  .opts{display:flex;flex-direction:column;gap:8px;}
+  .opts.grid{flex-direction:row;flex-wrap:wrap;}
+  .opts.grid .opt{flex:1 1 44%;}
+  .opt{padding:14px 12px;border:2px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font-size:1rem;font-weight:600;cursor:pointer;text-align:left;min-height:52px;line-height:1.4;word-break:keep-all;}
+  .opt:active{transform:scale(.98);}
+  .opt.sel{border-color:var(--p);background:var(--p-l);color:var(--p-d);}
+  .btn{display:block;width:100%;padding:15px;border:none;border-radius:12px;font-size:1.05rem;font-weight:800;cursor:pointer;min-height:52px;text-align:center;text-decoration:none;}
+  .btn.p{background:var(--p);color:#fff;}
+  .btn.y{background:var(--acc);color:#1A1A1A;}
+  .btn.o{background:var(--card);color:var(--p-d);border:2px solid var(--line);}
+  .btn.ghost{background:transparent;color:var(--g);font-weight:600;font-size:.9rem;min-height:40px;padding:8px;}
+  .btn:disabled{opacity:.4;cursor:default;}
+  .row{display:flex;gap:10px;margin-top:10px;}
+  .row .btn{flex:1;}
+  label.f{display:block;font-weight:700;margin:12px 0 6px;font-size:.95rem;}
+  input[type=text],input[type=tel],input[type=date],input[type=time],select,textarea{width:100%;padding:13px;border:2px solid var(--line);border-radius:11px;font-size:1rem;background:var(--card);color:var(--ink);}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--p);}
+  .hint{font-size:.8rem;color:var(--g);margin:4px 0 0;}
+  .consent{display:flex;gap:10px;align-items:flex-start;background:var(--p-l);border-radius:12px;padding:12px;margin-top:10px;font-size:.85rem;line-height:1.55;word-break:keep-all;}
+  .consent input{width:22px;height:22px;flex:0 0 22px;margin-top:2px;}
+  .card{border:2px solid var(--line);border-radius:12px;padding:12px 14px;margin:10px 0;}
+  .card.top{border-color:var(--p);}
+  .card .k{font-size:.8rem;color:var(--p-d);font-weight:800;}
+  .card .t{font-size:1.1rem;font-weight:800;margin:2px 0 4px;}
+  .card p{margin:0;font-size:.9rem;color:var(--g);word-break:keep-all;}
+  .reward{background:var(--p-l);border-radius:12px;padding:12px 14px;margin:12px 0;font-size:.95rem;word-break:keep-all;}
+  .qrbox{background:#fff;border-radius:16px;padding:14px;margin:12px auto;width:100%;max-width:320px;display:flex;justify-content:center;}
+  .qrbox svg{width:100%;height:auto;max-width:292px;}
+  .linkbox{background:var(--code);color:#e5e3dd;font-size:.72rem;font-family:monospace;padding:10px;border-radius:10px;word-break:break-all;margin-top:10px;user-select:all;}
+  details summary{cursor:pointer;color:var(--g);font-size:.85rem;padding:8px 0;list-style:none;text-align:center;}
+  details summary::-webkit-details-marker{display:none;}
+  .sum{display:flex;justify-content:space-between;gap:10px;padding:8px 2px;border-bottom:1px solid var(--line);font-size:.92rem;}
+  .sum:last-child{border-bottom:none;}
+  .sum .k{color:var(--g);flex-shrink:0;}
+  .sum .v{font-weight:700;text-align:right;word-break:keep-all;}
+  .big{font-size:1.5rem;font-weight:800;margin:0;}
+  .chip{display:inline-block;background:var(--p-l);color:var(--p-d);font-size:.8rem;font-weight:800;border-radius:8px;padding:2px 10px;margin:0 6px 4px 0;}
+  .chip.warm{background:#fff3c4;color:#7a5a00;}
+  .seg{display:flex;flex-wrap:wrap;gap:6px;}
+  .seg .opt{flex:1 1 22%;text-align:center;padding:10px 6px;font-size:.9rem;min-height:44px;}
+  .slots{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px;}
+  .slot{padding:10px 4px;border:2px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font-size:.9rem;font-weight:700;cursor:pointer;min-height:44px;}
+  .slot.sel{border-color:var(--p);background:var(--p-l);color:var(--p-d);}
+  .slot.taken{opacity:.3;text-decoration:line-through;cursor:default;}
+  .list .it{display:block;width:100%;text-align:left;background:var(--card);border:2px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px;cursor:pointer;color:var(--ink);font-size:.92rem;}
+  .list .it b{font-size:1rem;}
+  .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0;}
+  .kpi div{background:var(--p-l);border-radius:10px;padding:10px 8px;text-align:center;}
+  .kpi b{display:block;font-size:1.3rem;color:var(--p-d);}
+  .kpi span{font-size:.75rem;color:var(--g);}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-size:.9rem;font-weight:700;opacity:0;transition:opacity .2s;pointer-events:none;z-index:30;max-width:92vw;text-align:center;}
+  .toast.on{opacity:1;}
+  video{width:100%;border-radius:12px;background:#000;max-height:60vh;object-fit:cover;}
+  .err{color:var(--err);font-weight:700;}
+  .tel{color:var(--p-d);text-decoration:none;font-weight:800;}
+  .hidden{display:none;}
+</style>
+</head>
+<body>
+<header><h1 id="hd">AssetTect 글로벌 자산·보장 1분 점검</h1><div class="prog" id="prog" hidden><i id="progi" style="width:0"></i></div></header>
+<div class="wrap" id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+// [[CODEC:start]] ── booth-v1 코덱 · 예약 카드 코덱 · 구간표 · 상담 주제 축 · 되비침 · 반입 payload — DOM 없이 돈다(tests/booth.test.mjs 가 이 블록만 잘라 vm 에서 돌린다)
+(function (global) {
+  'use strict';
+
+  var VER = '1';
+  var NAME_MAX = 6, HOSP_MAX = 12;          // QR 상한(v10-M 213바이트) 안에 최악값이 들어가는 길이
+  var UNK = 9;                              // 구간 「잘 모르겠다」의 전송 부호
+  var DUR_MAX = 46655;                      // 소요 초 상한(36진수 3자리)
+
+  /* 고지 — 도입·결과·QR·상담자 화면에 상시. 원장셈 copy-gate 와 같은 문구(테스트가 존재를 강제)에
+     2차 계획(§E)의 결과 화면 고지를 잇는다. */
+  var NOTICE = '이 설문은 자산 현황과 관심사를 파악하기 위한 것으로, 특정 금융상품의 권유·중개·알선이 아닙니다.';
+  var NOTICE2 = '투자 조언·세무 또는 법률 자문이 아니며, 수익률·환급금·환율·세금 결과의 보장이나 개인별 적합성 판단이 아닙니다. 실제 상담은 거주지·국적·세법·계약 구조·판매권한·약관과 개인 상황을 확인한 뒤 진행됩니다.';
+
+  /* 구간표 — 원장셈 「자산의 국경」 문진 Q9·Q10 과 항등(라벨·대표값·순서). 대표값 null = 잘 모르겠다. */
+  var B_KRW = [['5억 미만', 2], ['5~10억', 7], ['10~20억', 15], ['20~50억', 35], ['50~100억', 70], ['100억 이상', 150], ['잘 모르겠다', null]];
+  var B_FX  = [['없다', 0], ['1억 미만', 0.5], ['1~5억', 3], ['5~10억', 7], ['10~30억', 20], ['30억 이상', 50], ['잘 모르겠다', null]];
+  var YN    = [['예', 2], ['생각 중', 1], ['아니오', 0]];
+  /* 상담 주제 축 — 판정 유형이 아니라 「먼저 이야기할 주제」. 2차 계획의 G1~G4 를 이 4축에 대응시킨다. */
+  var AXES  = { A: '자녀교육·체류', B: '해외 거주·이주', C: '통화·국가 분산', D: '승계·상속' };
+  /* 관심 해외 자산 유형(복수) — 비트마스크. 해외 보험은 무명 범주로만 부른다(상품명·회사명·지명 없음). */
+  var FXTYPES = [['해외 주식·ETF', 1], ['해외 채권', 2], ['해외 부동산', 4], ['해외 보험사에 직접 가입하는 저축성 보험', 8]];
+
+  var QUESTIONS = [
+    { id: 'q1', type: 'yn', axis: 'A', title: '본인 또는 자녀의 해외 대학·해외 진출을\n고려하고 있습니까?' },
+    { id: 'q2', type: 'yn', axis: 'B', title: '해외 이주·영주권·장기 해외 거주를\n생각하고 있습니까?' },
+    { id: 'q3', type: 'yn', axis: 'C', title: '글로벌 자산 형성·해외 부동산·\n패밀리오피스형 자산관리에 관심이 있습니까?' },
+    { id: 'q4', type: 'yn', axis: 'D', title: '해외 자산과 관련한 상속·증여 또는\n글로벌 절세 전략이 필요합니까?' },
+    { id: 'q5', type: 'yn', axis: 'B', title: '본인·가족의 해외 거주·체류·휴양 등\n글로벌 라이프스타일을 중요하게 생각합니까?' },
+    { id: 'q6', type: 'band', bands: B_KRW, title: '원화 금융자산을 모두 합하면\n얼마쯤인가요?', lead: '예금·주식·펀드·연금계좌를 합해서, 해외·외화표시는 빼고 봅니다. 대략이면 충분합니다.' },
+    { id: 'q7', type: 'band', bands: B_FX,  title: '해외·외화표시 금융자산을\n모두 합하면 얼마쯤인가요?', lead: '해외 주식·ETF, 외화예금, 해외 보험 잔액을 포함해서 봅니다.' },
+    { id: 'q8', type: 'multi', opts: FXTYPES, none: '없다', title: '관심 있는 해외 자산 유형을\n모두 골라 주세요.', lead: '보유 여부와 무관하게, 알아보고 싶은 유형이면 됩니다.' },
+    { id: 'q9', type: 'pick', title: '상담에서 가장 먼저\n확인하고 싶은 것은 무엇인가요?',
+      opts: [['상속세 규모와 재원', 'D'], ['통화·국가 분산 점검', 'C'], ['자녀 교육·해외 거주 대비', 'A'], ['보유 해외자산 점검·신고 의무', 'C']] },
+    { id: 'q10', type: 'pick', title: '상담은 어떤 방식이 편하신가요?',
+      opts: [['오늘 부스에서 10분', 'now'], ['학회 후 전화', 'call'], ['학회 후 화상', 'video'], ['학회 후 대면', 'meet']] }
+  ];
+  /* 상담 방식 — 코드 ↔ 짧은 라벨 ↔ 예약 카드 부호(1자) */
+  var CHANNELS = [['현장 10분', 'now', 'n'], ['전화', 'call', 'c'], ['화상', 'video', 'v'], ['대면', 'meet', 'm']];
+
+  /* 결과 화면 되비침 — 판정·권고 없는 사실 예고. 원장셈 문진 REFLECT 와 같은 문장. Q9 순서와 같다. */
+  var REFLECT = [
+    '상속세는 상담에서 유산 규모 → 공제 → 재원 순으로 확정합니다.',
+    '통화·국가 분산은 상담에서 금융자산 전체 축으로 정밀 점검합니다.',
+    '자녀 교육·해외 거주는 상담에서 시기와 기간을 연도로 놓고 확인합니다.',
+    '보유 해외자산의 신고 의무와 과세는 상담에서 함께 확인합니다.'
+  ];
+  /* 상담 주제 카드 문장 — 사실 예고까지만. 「~형」 판정어·권유 문장을 쓰지 않는다. */
+  var AXIS_TEXT = {
+    A: '자녀 교육과 해외 체류는 시기와 기간이 먼저입니다. 상담에서는 체류 계획을 연도로 놓고 필요한 자금의 통화를 확인합니다.',
+    B: '장기 거주·이주는 거주지 세제와 생활 기반이 함께 움직입니다. 상담에서는 거주 예정지와 시기를 먼저 확인합니다.',
+    C: '금융자산이 한 통화에 모여 있는지는 원화·외화 비중으로 먼저 봅니다. 점검 기준과의 비교는 상담에서 확인합니다.',
+    D: '상속세는 상담에서 유산 규모 → 공제 → 재원 순으로 확정합니다. 10년 주기 증여재산공제의 활용 여부도 함께 봅니다.'
+  };
+  /* 상담자 입력값 — 2차 계획 §F. 상태·관심도·다음 할 일. */
+  var STATUS = ['스캔완료', '현장상담중', '예약확정', '보류', '후속연락'];
+  var HEAT = [['높음', 'hot'], ['보통', 'warm'], ['장기', 'nurture']];
+  var NEXT = ['보고서 발송', '서류 안내', '전문가 연결', '재연락'];
+  /* 예약 카드 「상담 전 준비하면 좋은 항목」 — 2차 계획 §G. 상품명 없음. */
+  var PREP = ['자산의 통화·국가별 대략적 비중', '자금 사용 목적과 목표 시점', '해외 체류·교육·승계 관련 계획', '현재 보유 중인 보험·투자 상품의 개요'];
+
+  // ── 바이트 · base64url — 환경(브라우저/vm)에 기대지 않고 직접 쓴다 ──────────────
+  function utf8Bytes(str) {
+    var s = unescape(encodeURIComponent(String(str))), out = [];
+    for (var i = 0; i < s.length; i++) out.push(s.charCodeAt(i) & 0xff);
+    return out;
+  }
+  function bytesToStr(bytes) {
+    var s = '';
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return decodeURIComponent(escape(s));
+  }
+  var B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  function b64uEncode(bytes) {
+    var out = '', i;
+    for (i = 0; i + 2 < bytes.length; i += 3) {
+      var n = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
+      out += B64[n >> 18] + B64[(n >> 12) & 63] + B64[(n >> 6) & 63] + B64[n & 63];
+    }
+    if (i < bytes.length) {
+      var a = bytes[i], b = (i + 1 < bytes.length) ? bytes[i + 1] : 0;
+      out += B64[a >> 2] + B64[((a & 3) << 4) | (b >> 4)];
+      if (i + 1 < bytes.length) out += B64[(b & 15) << 2];
+    }
+    return out;
+  }
+  function b64uDecode(str) {
+    var out = [], buf = 0, bits = 0;
+    for (var i = 0; i < str.length; i++) {
+      var v = B64.indexOf(str[i]);
+      if (v < 0) return null;
+      buf = (buf << 6) | v; bits += 6;
+      if (bits >= 8) { bits -= 8; out.push((buf >> bits) & 0xff); }
+    }
+    return out;
+  }
+
+  function cleanText(s, max) {
+    return String(s == null ? '' : s).replace(/[|\u0000-\u001f]/g, '').trim().slice(0, max);
+  }
+  function cleanPhone(s) { return String(s == null ? '' : s).replace(/[^0-9]/g, '').slice(0, 11); }
+
+  /* 검사 마디 — 텍스트 바이트의 16비트 해시를 36진수 2자리로. 잘리거나 한 글자 바뀐 페이로드가
+     「멀쩡한 다른 레코드」로 복호되는 것을 막는다(틀린 레코드를 만드느니 null). */
+  function check(text) {
+    var b = utf8Bytes(text), h = 0x811c;
+    for (var i = 0; i < b.length; i++) { h ^= b[i]; h = (h * 0x0101) & 0xffff; h ^= h >> 7; }
+    var s = (h % 1296).toString(36);
+    return s.length < 2 ? '0' + s : s;
+  }
+  /* 파라미터 값(?r= / ?b=)이든 전체 URL 이든 맨 페이로드든 받아, 검사 마디까지 맞는 마디 배열을 돌려준다. */
+  function unpack(input, key, nParts) {
+    var s = String(input || '').trim();
+    var m = s.match(new RegExp('[?&]' + key + '=([A-Za-z0-9_-]+)'));
+    if (m) s = m[1];
+    if (!/^[A-Za-z0-9_-]{8,}$/.test(s)) return null;
+    var bytes = b64uDecode(s);
+    if (!bytes) return null;
+    var text;
+    try { text = bytesToStr(bytes); } catch (e) { return null; }
+    var p = text.split('|');
+    if (p.length !== nParts) return null;
+    if (p[nParts - 1] !== check(p.slice(0, nParts - 1).join('|'))) return null;
+    return p;
+  }
+  function pack(parts) { var text = parts.join('|'); return b64uEncode(utf8Bytes(text + '|' + check(text))); }
+
+  /* ── 응답 인코딩: 레코드 → 페이로드. 실을 수 없는 값(전화 9자리 미만·답 누락)은 throw. ──
+     텍스트 = "1|성함|병원명|전화|Q1~Q8(8자리: Q1~5 0-2 · Q6·7 구간 0-5/9 · Q8 비트마스크 16진수)|Q9|Q10|동의|소요초(36진수)|시각(분·36진수)|검사"
+     동의 = 0 필수 2종만 / 1 필수 + 마케팅 수신. 소요초 = 「1분 점검 시작」 → QR 생성까지(KPI 평균 응답시간). */
+  function encode(rec) {
+    var a = rec.a || {};
+    var q = '';
+    for (var i = 1; i <= 5; i++) {
+      var v = a['q' + i];
+      if (!(v === 0 || v === 1 || v === 2)) throw new Error('q' + i + ' 누락');
+      q += v;
+    }
+    ['q6', 'q7'].forEach(function (id) {
+      var b = a[id];
+      if (!(b >= 0 && b <= 6)) throw new Error(id + ' 누락');
+      q += (b === 6) ? UNK : b;
+    });
+    if (!(a.q8 >= 0 && a.q8 <= 15)) throw new Error('q8 누락');
+    q += a.q8.toString(16);
+    if (!(a.q9 >= 0 && a.q9 <= 3)) throw new Error('q9 누락');
+    if (!(a.q10 >= 0 && a.q10 <= 3)) throw new Error('q10 누락');
+    var phone = cleanPhone(rec.phone);
+    if (phone.length < 9) throw new Error('전화 9자리 미만');
+    var ts = Math.floor((rec.ts || Date.now()) / 60000).toString(36);
+    var dur = Math.max(0, Math.min(DUR_MAX, Math.round(rec.dur || 0))).toString(36);
+    return pack([VER, cleanText(rec.name, NAME_MAX), cleanText(rec.hospital, HOSP_MAX), phone, q, a.q9, a.q10, rec.marketing ? '1' : '0', dur, ts]);
+  }
+
+  /* ── 응답 복호: 형식·검사 마디가 어긋나면 null(틀린 레코드를 만들지 않는다). ── */
+  function decode(input) {
+    var p = unpack(input, 'r', 11);
+    if (!p || p[0] !== VER) return null;
+    var phone = p[3], q = p[4], q9 = p[5], q10 = p[6], c = p[7], dur = p[8], ts = parseInt(p[9], 36);
+    if (!/^[0-9]{9,11}$/.test(phone) || !/^[0-9]{7}[0-9a-f]$/.test(q) || !/^[0-3]$/.test(q9) || !/^[0-3]$/.test(q10) || !/^[01]$/.test(c) || !/^[0-9a-z]{1,3}$/.test(dur) || !(ts > 0)) return null;
+    var a = {};
+    for (var i = 0; i < 5; i++) { var v = +q[i]; if (v > 2) return null; a['q' + (i + 1)] = v; }
+    for (var j = 5; j < 7; j++) {
+      var b = +q[j];
+      if (b === UNK) b = 6; else if (b > 5) return null;
+      a['q' + (j + 1)] = b;
+    }
+    a.q8 = parseInt(q[7], 16); a.q9 = +q9; a.q10 = +q10;
+    return { v: 1, name: p[1], hospital: p[2], phone: phone, a: a, marketing: c === '1', dur: parseInt(dur, 36), ts: ts * 60000 };
+  }
+
+  /* ── 예약 카드 코덱(?b=) — 상담자 태블릿 화면의 QR → 참가자 폰. 서버 없이 예약 확인을 건네는 길.
+     텍스트 = "b1|성함|방식(1자)|일시(YYYYMMDDHHMM 또는 빈칸)|상담자|주제 축 2자|Q9|검사". 전화번호는 싣지 않는다(본인 폰이 받는다). ── */
+  function encodeBooking(b) {
+    var ch = null;
+    CHANNELS.forEach(function (c) { if (c[1] === b.channel) ch = c[2]; });
+    if (!ch) throw new Error('방식 누락');
+    var at = String(b.at || '').replace(/[^0-9]/g, '');
+    if (at && !/^[0-9]{12}$/.test(at)) throw new Error('일시 형식');
+    var topics = String(b.topics || '').replace(/[^ABCD]/g, '').slice(0, 2);
+    if (topics.length !== 2) throw new Error('주제 축 2자');
+    if (!(b.q9 >= 0 && b.q9 <= 3)) throw new Error('q9');
+    return pack(['b1', cleanText(b.name, NAME_MAX), ch, at, cleanText(b.counselor, NAME_MAX), topics, b.q9]);
+  }
+  function decodeBooking(input) {
+    var p = unpack(input, 'b', 8);
+    if (!p || p[0] !== 'b1') return null;
+    var channel = null;
+    CHANNELS.forEach(function (c) { if (c[2] === p[2]) channel = c[1]; });
+    if (!channel || !/^([0-9]{12})?$/.test(p[3]) || !/^[ABCD]{2}$/.test(p[5]) || !/^[0-3]$/.test(p[6])) return null;
+    var at = p[3] ? p[3].slice(0, 4) + '-' + p[3].slice(4, 6) + '-' + p[3].slice(6, 8) + 'T' + p[3].slice(8, 10) + ':' + p[3].slice(10, 12) : '';
+    return { name: p[1], channel: channel, at: at, counselor: p[4], topics: [p[5][0], p[5][1]], q9: +p[6] };
+  }
+
+  /* ── 외화 비중(%) — 원장셈 문진 fxShare 와 같은 산식·같은 규율.
+     Q6·Q7 중 「잘 모르겠다」가 있으면 null 이고, 화면은 그 줄을 통째로 접는다(0%·NaN 오도 방지). ── */
+  function fxShare(a) {
+    var k = B_KRW[a.q6], f = B_FX[a.q7];
+    if (!k || !f || k[1] === null || f[1] === null) return null;
+    var d = k[1] + f[1];
+    if (!(d > 0)) return null;
+    return Math.round(f[1] / d * 1000) / 10;
+  }
+
+  /* ── 상담 주제 축 순위 — Q9(먼저 확인하고 싶은 것)의 축이 규칙으로 1순위. 나머지는 Q1~Q5(예 2·생각 중 1·아니오 0)
+     점수순, 관심 유형(Q8)이 하나라도 있으면 C +1. 동점은 A·B·C·D 순.
+     Q6·Q7 은 채점하지 않는다 — 구간을 점수로 바꾸는 순간 밴드 판정이 된다. ── */
+  function ranked(a) {
+    var sc = { A: 0, B: 0, C: 0, D: 0 };
+    QUESTIONS.forEach(function (qd) { if (qd.type === 'yn') sc[qd.axis] += (a[qd.id] || 0); });
+    if (a.q8 > 0) sc.C += 1;
+    var q9axis = QUESTIONS[8].opts[a.q9] ? QUESTIONS[8].opts[a.q9][1] : null;
+    var rest = ['A', 'B', 'C', 'D'].filter(function (k) { return k !== q9axis; });
+    rest.sort(function (x, y) { return (sc[y] - sc[x]) || ('ABCD'.indexOf(x) - 'ABCD'.indexOf(y)); });
+    return q9axis ? [q9axis].concat(rest) : rest;
+  }
+  function axes(a) { return ranked(a).slice(0, 2); }
+
+  function ynLabel(v) { for (var i = 0; i < YN.length; i++) if (YN[i][1] === v) return YN[i][0]; return '-'; }
+  function bandLabel(id, idx) { var b = (id === 'q6' ? B_KRW : B_FX)[idx]; return b ? b[0] : '-'; }
+  function pickLabel(id, idx) { var qd = id === 'q9' ? QUESTIONS[8] : QUESTIONS[9]; return qd.opts[idx] ? qd.opts[idx][0] : '-'; }
+  function pickCode(id, idx) { var qd = id === 'q9' ? QUESTIONS[8] : QUESTIONS[9]; return qd.opts[idx] ? qd.opts[idx][1] : null; }
+  function channelLabel(code) { for (var i = 0; i < CHANNELS.length; i++) if (CHANNELS[i][1] === code) return CHANNELS[i][0]; return code || ''; }
+  function fxTypeLabels(mask) {
+    var out = [];
+    FXTYPES.forEach(function (t) { if (mask & t[1]) out.push(t[0]); });
+    return out;
+  }
+  function fmtDur(sec) { if (!(sec > 0)) return ''; var m = Math.floor(sec / 60), s = sec % 60; return (m ? m + '분 ' : '') + s + '초'; }
+
+  /* ── 상담자 전용 서술(context) — 사실만. 판정 어휘를 두지 않는다(반입 모달·보고서로 흘러갈 수 있는 문자열). ── */
+  function contextLines(rec, event) {
+    var a = rec.a, ax = axes(a), fx = fxShare(a), types = fxTypeLabels(a.q8);
+    var parts = [
+      '부스 설문' + (event ? '(' + event + ')' : '') + ' — 원화 금융자산 ' + bandLabel('q6', a.q6) + '(구간) · 외화표시 ' + bandLabel('q7', a.q7) + '(구간)' + (fx === null ? '' : ' · 외화 비중 약 ' + fx + '%(구간 대표값 근사)'),
+      '관심 해외 자산 유형: ' + (types.length ? types.join(', ') : '없다'),
+      '먼저 확인: ' + pickLabel('q9', a.q9) + ' · 희망 방식: ' + pickLabel('q10', a.q10) + (rec.dur > 0 ? ' · 응답 소요 ' + fmtDur(rec.dur) : ''),
+      '상담 주제: ' + ax.map(function (k) { return k + ' ' + AXES[k]; }).join(', '),
+      '응답: 해외 대학·진출 ' + ynLabel(a.q1) + ' / 이주·장기 거주 ' + ynLabel(a.q2) + ' / 글로벌 자산·부동산 ' + ynLabel(a.q3) + ' / 상속·증여·절세 ' + ynLabel(a.q4) + ' / 글로벌 라이프스타일 ' + ynLabel(a.q5),
+      '동의: 개인정보 수집·이용, 상담 예약 연락' + (rec.marketing ? ', 마케팅 정보 수신' : '') + ' (booth-consent-v1)'
+    ];
+    if (rec.hospital) parts.unshift('병(의)원: ' + rec.hospital);
+    return parts;
+  }
+
+  /* ── store-app 반입용 payload — 「받은 답변 붙여넣기」 칸 계약 {name, phone, date, source, context, inputs}.
+     inputs 는 원장셈 문진과 같은 실물 id(a-other·a-forex, 백만원 = 억원×100). 「잘 모르겠다」는 키 제외. ── */
+  function storePayload(rec, event) {
+    var a = rec.a, inputs = {};
+    var k = B_KRW[a.q6], f = B_FX[a.q7];
+    if (k && k[1] !== null) inputs['a-other'] = Math.round(k[1] * 100);
+    if (f && f[1] !== null) inputs['a-forex'] = Math.round(f[1] * 100);
+    var out = { source: 'booth', name: rec.name || '', phone: rec.phone, date: new Date(rec.ts).toISOString(), context: contextLines(rec, event), inputs: inputs };
+    if (rec.booking && (rec.booking.at || rec.booking.status)) {
+      out.context.push('부스 상담: ' + [rec.booking.status, channelLabel(rec.booking.channel), rec.booking.at ? rec.booking.at.replace('T', ' ') : '', rec.booking.counselor, rec.booking.memo].filter(Boolean).join(' · '));
+    }
+    return out;
+  }
+
+  /* ── AssetTect 콘솔 가져오기용 레코드 — records.js 「가져오기 (JSON)」 계약(assettect_records_export_v1 → data.schema
+     assettect_survey_v1 · basic/risk 객체 · goals 배열). 부스가 실제로 아는 것만 채운다: 해외 체류 계획(Q2), 외화 비중(자가진단
+     구간 근사), 목표 초안(주제 축 순). 자산 목록·소득·위험 문항은 비워 둔다 — 콘솔의 정밀 설문에서 고객이 직접 답한다.
+     이름·병원은 booth 메타에만 두고 전화번호는 싣지 않는다(콘솔 설문에는 연락처 칸이 없다). ── */
+  var GOAL_OF = { A: ['overseas'], B: ['overseas'], C: ['fx_assets', 'diversify'], D: ['estate_fund', 'succession'] };
+  var GOAL_LABEL = { overseas: '해외 거주 또는 유학자금', fx_assets: '외화자산 확보', diversify: '자산 소재지·보유주체 분산', estate_fund: '상속재원 확보', succession: '사업승계 및 지분 이전' };
+  function assettectRecord(rec, event) {
+    var a = rec.a, fx = fxShare(a), goals = [];
+    ranked(a).forEach(function (k) {
+      GOAL_OF[k].forEach(function (code) { if (goals.length < 3 && goals.indexOf(code) < 0) goals.push(code); });
+    });
+    return {
+      schema: 'assettect_survey_v1',
+      saved_at: new Date(rec.ts).toISOString(),
+      source: 'booth',
+      booth: { event: event || '', name: rec.name || '', hospital: rec.hospital || '', at: new Date(rec.ts).toISOString(), topics: axes(a),
+               fx_types: fxTypeLabels(a.q8), first_check: pickLabel('q9', a.q9), channel: pickCode('q10', a.q10), context: contextLines(rec, event),
+               booking: rec.booking || null,
+               note: '부스 1분 설문에서 옮긴 초안 — 비어 있는 칸은 정밀 설문에서 고객이 직접 답합니다.' },
+      basic: { age: null, nationality: '', tax_residence: '', occupation: '', biz_entity: '',
+               overseas_plan: a.q2 === 0 ? 'none' : 'considering', spouse: '', children_count: null, heirs: '' },
+      financial: { annual_income_manwon: null, annual_savings_manwon: null, liquidity_need_manwon: null,
+                   fx_asset_ratio_pct: fx === null ? null : Math.round(fx), assets: [], fund_buckets: {}, offshore_review_manwon: null },
+      goals: goals.map(function (code, i) { return { rank: i + 1, code: code, label: GOAL_LABEL[code] }; }),
+      risk: { invest_experience: '', loss_tolerance: '', surrender_possibility: '', invest_horizon: '', fx_tolerance: '', pay_continuity: '',
+              funds_within_5y: '', cpb_structure: '', emergency_fund: '', withdraw_plan: '', tax_claim: '', breakeven_basis: '' }
+    };
+  }
+  function assettectExport(list, event) {
+    return { schema: 'assettect_records_export_v1', exported_at: new Date().toISOString(), source: 'booth', event: event || '',
+             records: list.map(function (r) { return { data: assettectRecord(r, event) }; }) };
+  }
+
+  /* ── 집계 — 서버 대시보드의 자리. 레코드 배열(+ 기기 카운터들)에서 숫자를 센다. ── */
+  function summarize(list, stats) {
+    var s = { scanned: list.length, onsite: 0, confirmed: 0, followup: 0, hold: 0, heat: { hot: 0, warm: 0, nurture: 0 }, channel: {}, counselor: {}, durN: 0, durSum: 0,
+              device: { started: 0, completed: 0, qr: 0, devices: 0 } };
+    list.forEach(function (r) {
+      var b = r.booking || {};
+      if (b.channel === 'now') s.onsite++;
+      if (b.status === '예약확정') s.confirmed++;
+      if (b.status === '후속연락') s.followup++;
+      if (b.status === '보류') s.hold++;
+      if (b.heat && s.heat[b.heat] !== undefined) s.heat[b.heat]++;
+      if (b.channel) s.channel[b.channel] = (s.channel[b.channel] || 0) + 1;
+      if (b.counselor) s.counselor[b.counselor] = (s.counselor[b.counselor] || 0) + 1;
+      if (r.dur > 0) { s.durN++; s.durSum += r.dur; }
+    });
+    s.durAvg = s.durN ? Math.round(s.durSum / s.durN) : null;
+    (stats || []).forEach(function (st) { s.device.started += st.started || 0; s.device.completed += st.completed || 0; s.device.qr += st.qr || 0; s.device.devices++; });
+    return s;
+  }
+
+  global.BOOTH_CODEC = {
+    VER: VER, NAME_MAX: NAME_MAX, HOSP_MAX: HOSP_MAX, NOTICE: NOTICE, NOTICE2: NOTICE2, DUR_MAX: DUR_MAX,
+    B_KRW: B_KRW, B_FX: B_FX, YN: YN, AXES: AXES, AXIS_TEXT: AXIS_TEXT, REFLECT: REFLECT, QUESTIONS: QUESTIONS, FXTYPES: FXTYPES, CHANNELS: CHANNELS,
+    STATUS: STATUS, HEAT: HEAT, NEXT: NEXT, PREP: PREP,
+    encode: encode, decode: decode, encodeBooking: encodeBooking, decodeBooking: decodeBooking,
+    fxShare: fxShare, axes: axes, ranked: ranked, summarize: summarize, fmtDur: fmtDur,
+    ynLabel: ynLabel, bandLabel: bandLabel, pickLabel: pickLabel, pickCode: pickCode, channelLabel: channelLabel, fxTypeLabels: fxTypeLabels,
+    contextLines: contextLines, storePayload: storePayload, assettectRecord: assettectRecord, assettectExport: assettectExport,
+    cleanText: cleanText, cleanPhone: cleanPhone, utf8Bytes: utf8Bytes
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+// [[CODEC:end]]
+</script>
+
+<script>
+// [[QR:start]] ── QR 인코더 — dd-life-app/src/js/30-qr.js 이식 사본(전역명만 BOOTH_QR). 정본이 갱신되면 함께 옮긴다.
+/* ═══════════════════════════════════════════════════════════════════════════
+   마흔셈 — QR 인코더 (그 자리에서 넘기는 링크용)
+
+   왜 직접 쓰는가: 배포본은 **외부 참조가 0** 이어야 한다(위생 게이트가 검사한다).
+   그리고 상담·강의 현장에서 통신이 끊겨도 화면은 떠야 한다. CDN 한 줄이면 둘 다 깨진다.
+
+   범위를 좁혀서 위험을 줄였다 — 이 인코더는 **바이트 모드 · 오류정정 M · 버전 1~10**
+   만 다룬다. 싣는 것은 두 가지다: 배포 주소 한 줄(45자, v4)과 **값이 실린 1:1 링크**
+   (107~205바이트, v9~v10). 후자가 v10 = 213바이트에 아슬아슬하게 들어간다.
+   넘치면 `null` 을 돌려주고 화면은 QR 없이 링크만 보여준다 — **틀린 QR을 그리느니
+   안 그리는 편이 낫다.** 찍히지 않는 QR은 현장에서 알아채기 어렵고, 그때는 이미 늦다.
+   (더 넓혀야 하면 오류정정 L 표를 더한다 — v10-L = 271바이트)
+
+   ⚠️ 사양 근거 (ISO/IEC 18004):
+      · GF(256) 원시다항식 0x11D
+      · 형식정보 BCH(15,5) 생성다항식 0x537, 마스크 0x5412, **MSB 우선**
+      · 버전정보 BCH(18,6) 생성다항식 0x1F25, **마스크 없음**, **LSB 우선** (v7 이상 필수)
+      · 마스크 8종 · 벌점 규칙 4종으로 최적 마스크 선택
+   ⚠️ 그림이 맞는지는 눈으로 확인할 수 없다. `tests/qr.test.mjs` 가 **되읽어서**
+      (마스크 해제 → 형식정보 복호 → 코드워드 추출 → RS 신드롬 0 → 원문 일치) 검증한다.
+      그래도 **배포 전에 실제 휴대폰으로 한 번 찍어 보는 것**을 화면이 안내한다.
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function (global) {
+  'use strict';
+
+  // ── GF(256) ───────────────────────────────────────────────────────────────
+  var EXP = new Array(512), LOG = new Array(256);
+  (function () {
+    var x = 1;
+    for (var i = 0; i < 255; i++) {
+      EXP[i] = x; LOG[x] = i;
+      x <<= 1;
+      if (x & 0x100) x ^= 0x11D;             // 원시다항식
+    }
+    for (var j = 255; j < 512; j++) EXP[j] = EXP[j - 255];
+  })();
+  function gmul(a, b) { return (a === 0 || b === 0) ? 0 : EXP[LOG[a] + LOG[b]]; }
+
+  /** RS 생성다항식 계수 (차수 = 오류정정 코드워드 수) */
+  function rsPoly(deg) {
+    var p = [1];
+    for (var i = 0; i < deg; i++) {
+      var q = p.concat([0]);
+      for (var j = 0; j < p.length; j++) q[j + 1] ^= gmul(p[j], EXP[i]);
+      p = q;
+    }
+    return p;
+  }
+
+  /** 데이터 코드워드 → 오류정정 코드워드 */
+  function rsEncode(data, ecLen) {
+    var gen = rsPoly(ecLen);
+    var res = data.concat(new Array(ecLen).fill(0));
+    for (var i = 0; i < data.length; i++) {
+      var c = res[i];
+      if (c === 0) continue;
+      for (var j = 0; j < gen.length; j++) res[i + j] ^= gmul(gen[j], c);
+    }
+    return res.slice(data.length);
+  }
+
+  // ── 버전별 제원 (오류정정 M 전용) ─────────────────────────────────────────
+  // [총 코드워드, 블록당 EC 코드워드, 그룹1 블록수, 그룹1 데이터코드워드, 그룹2 블록수, 그룹2 데이터코드워드]
+  var SPEC_M = {
+    1:  [26,   10, 1, 16,  0, 0],
+    2:  [44,   16, 1, 28,  0, 0],
+    3:  [70,   26, 1, 44,  0, 0],
+    4:  [100,  18, 2, 32,  0, 0],
+    5:  [134,  24, 2, 43,  0, 0],
+    6:  [172,  16, 4, 27,  0, 0],
+    7:  [196,  18, 4, 31,  0, 0],
+    8:  [242,  22, 2, 38,  2, 39],
+    9:  [292,  22, 3, 36,  2, 37],
+    10: [346,  26, 4, 43,  1, 44]
+  };
+  /** 정렬 패턴 중심 좌표 (버전 2~10). 버전 1은 없다. */
+  var ALIGN = {
+    1: [], 2: [6, 18], 3: [6, 22], 4: [6, 26], 5: [6, 30],
+    6: [6, 34], 7: [6, 22, 38], 8: [6, 24, 42], 9: [6, 26, 46], 10: [6, 28, 50]
+  };
+  /* 🚨 오래 6 에서 멈춰 있었다. 제원표가 없어서가 아니라 **버전 7 이상은 「버전정보」
+     블록(18비트 BCH, 우상단·좌하단 3×6)이 필수**인데 이 인코더가 그것을 안 썼기 때문이다.
+     안 쓰면 그 자리에 데이터가 들어가고 스캐너는 코드를 못 읽는다 — 화면에는 멀쩡한
+     흑백 격자가 뜨므로 **현장에서야 드러난다.**
+
+     2026-08-06 에 버전정보를 구현하고 10 으로 올렸다. 이유는 용량이다:
+     상담에서 만드는 **값이 실린 1:1 링크**가 실측 118~205바이트라 v6(106) 에 안 들어간다.
+     그 링크를 QR 로 못 그리면 **연락처가 없는 자리에서 고객에게 자기 숫자를 건넬 길이 없다** —
+     아이폰 유저·그 자리 상담이 정확히 그 경우다. v10 = 213바이트.
+     ⚠️ 그래도 넘칠 수 있다(자릿수가 큰 고객). 그때는 matrix() 가 null 을 내고 화면은
+        링크만 보여준다 — **틀린 QR을 그리느니 안 그린다**는 규약은 그대로다. */
+  var MAX_VER = 10;
+
+  function dataCodewordCount(ver) {
+    var s = SPEC_M[ver];
+    return s[2] * s[3] + s[4] * s[5];
+  }
+
+  /** 바이트 모드에서 이 버전이 담을 수 있는 최대 바이트 수 */
+  function capacityBytes(ver) {
+    var lenBits = ver <= 9 ? 8 : 16;          // 문자수 지시자 길이 (바이트모드)
+    return Math.floor((dataCodewordCount(ver) * 8 - 4 - lenBits) / 8);
+  }
+
+  // ── 비트 버퍼 ─────────────────────────────────────────────────────────────
+  function BitBuf() { this.bits = []; }
+  BitBuf.prototype.put = function (val, len) {
+    for (var i = len - 1; i >= 0; i--) this.bits.push((val >>> i) & 1);
+  };
+
+  /** UTF-8 바이트 배열 — 한글 라벨이 URL 인코딩돼 들어와도 안전하게 처리한다. */
+  function utf8Bytes(str) {
+    var out = [], s = unescape(encodeURIComponent(String(str)));
+    for (var i = 0; i < s.length; i++) out.push(s.charCodeAt(i) & 0xff);
+    return out;
+  }
+
+  /** 문자열 → 최종 코드워드열(데이터+EC, 인터리브 완료). 못 담으면 null. */
+  function buildCodewords(text) {
+    var bytes = utf8Bytes(text);
+    var ver = 0;
+    for (var v = 1; v <= MAX_VER; v++) {
+      if (bytes.length <= capacityBytes(v)) { ver = v; break; }
+    }
+    if (!ver) return null;                                   // 너무 길다 → 그리지 않는다
+
+    var s = SPEC_M[ver];
+    var ecLen = s[1], g1n = s[2], g1d = s[3], g2n = s[4], g2d = s[5];
+    var total = dataCodewordCount(ver);
+
+    var buf = new BitBuf();
+    buf.put(0x4, 4);                                          // 바이트 모드
+    buf.put(bytes.length, ver <= 9 ? 8 : 16);
+    for (var i = 0; i < bytes.length; i++) buf.put(bytes[i], 8);
+
+    var cap = total * 8;
+    var term = Math.min(4, cap - buf.bits.length);
+    buf.put(0, term);                                         // 종료자
+    while (buf.bits.length % 8) buf.bits.push(0);             // 바이트 정렬
+
+    var data = [];
+    for (var b = 0; b < buf.bits.length; b += 8) {
+      var byte = 0;
+      for (var k = 0; k < 8; k++) byte = (byte << 1) | buf.bits[b + k];
+      data.push(byte);
+    }
+    var PAD = [0xEC, 0x11];                                   // 채움 코드워드 교대
+    for (var p = 0; data.length < total; p++) data.push(PAD[p % 2]);
+
+    // 블록 분할 → 블록별 RS → 인터리브
+    var blocks = [], pos = 0, n;
+    for (n = 0; n < g1n; n++) { blocks.push(data.slice(pos, pos + g1d)); pos += g1d; }
+    for (n = 0; n < g2n; n++) { blocks.push(data.slice(pos, pos + g2d)); pos += g2d; }
+    var ecs = blocks.map(function (blk) { return rsEncode(blk, ecLen); });
+
+    var out = [], maxLen = Math.max(g1d, g2d ? g2d : 0), col;
+    for (col = 0; col < maxLen; col++) {
+      for (n = 0; n < blocks.length; n++) if (col < blocks[n].length) out.push(blocks[n][col]);
+    }
+    for (col = 0; col < ecLen; col++) {
+      for (n = 0; n < ecs.length; n++) out.push(ecs[n][col]);
+    }
+    return { ver: ver, codewords: out };
+  }
+
+  // ── 모듈 배치 ─────────────────────────────────────────────────────────────
+  function newMatrix(size) {
+    var m = [];
+    for (var r = 0; r < size; r++) m.push(new Array(size).fill(null));   // null = 미확정
+    return m;
+  }
+
+  function placeFinder(m, r0, c0) {
+    for (var r = -1; r <= 7; r++) {
+      for (var c = -1; c <= 7; c++) {
+        var rr = r0 + r, cc = c0 + c;
+        if (rr < 0 || cc < 0 || rr >= m.length || cc >= m.length) continue;
+        var on = (r >= 0 && r <= 6 && (c === 0 || c === 6)) ||
+                 (c >= 0 && c <= 6 && (r === 0 || r === 6)) ||
+                 (r >= 2 && r <= 4 && c >= 2 && c <= 4);
+        m[rr][cc] = on ? 1 : 0;
+      }
+    }
+  }
+
+  /** 버전정보 18비트 — BCH(18,6), 생성다항식 0x1F25 (x¹²+x¹¹+x¹⁰+x⁹+x⁸+x⁵+x²+1).
+   *
+   *  ⚠️ 형식정보와 달리 **마스크 XOR 이 없다.** 형식정보의 0x5412 에 해당하는 것이 없다 —
+   *     여기에 습관적으로 XOR 을 넣으면 값이 통째로 어긋난다.
+   *  ⚠️ 공표표(ISO/IEC 18004 표 D.1)를 옮겨 적지 않고 **계산한다.** 표를 손으로 옮기면
+   *     그 버전 하나만 조용히 안 읽히고, 그 버전이 걸리는 길이의 링크에서만 드러난다.
+   *     tests/qr.test.mjs 가 계산 결과를 공표표와 직접 대조한다. */
+  function versionBits(ver) {
+    var rem = ver;
+    for (var i = 0; i < 12; i++) rem = (rem << 1) ^ ((rem >>> 11) * 0x1F25);
+    return (ver << 12) | rem;
+  }
+
+  /** 버전정보 두 사본이 들어가는 셀. i 번째 원소가 비트 i 의 [좌하단, 우상단] 자리다.
+   *
+   *  좌하단 3×6 (행 size−11…size−9 · 열 0…5) · 우상단 6×3 (행 0…5 · 열 size−11…size−9).
+   *  🚨 **LSB 우선이다** — 형식정보(MSB 우선)와 **반대**다. 형식정보를 LSB 로 깔았다가
+   *     실기기에서만 코드가 안 읽힌 사고가 이 파일에 기록돼 있는데(formatCells 주석),
+   *     여기서는 그 교훈을 그대로 적용하면 **틀린다.** 규격이 서로 다르다. */
+  function versionCells(size) {
+    var out = [];
+    for (var i = 0; i < 18; i++) {
+      var a = size - 11 + (i % 3), b = Math.floor(i / 3);
+      out.push([[a, b], [b, a]]);
+    }
+    return out;
+  }
+
+  function placeFunction(m, ver) {
+    var size = m.length, i, j;
+    placeFinder(m, 0, 0);
+    placeFinder(m, 0, size - 7);
+    placeFinder(m, size - 7, 0);
+
+    // 타이밍 패턴
+    for (i = 8; i < size - 8; i++) {
+      if (m[6][i] === null) m[6][i] = (i % 2 === 0) ? 1 : 0;
+      if (m[i][6] === null) m[i][6] = (i % 2 === 0) ? 1 : 0;
+    }
+    // 정렬 패턴 — 파인더와 겹치는 자리는 건너뛴다
+    var ac = ALIGN[ver];
+    for (i = 0; i < ac.length; i++) {
+      for (j = 0; j < ac.length; j++) {
+        var r = ac[i], c = ac[j];
+        if ((r <= 8 && c <= 8) || (r <= 8 && c >= size - 9) || (r >= size - 9 && c <= 8)) continue;
+        for (var dr = -2; dr <= 2; dr++) {
+          for (var dc = -2; dc <= 2; dc++) {
+            m[r + dr][c + dc] = (Math.max(Math.abs(dr), Math.abs(dc)) !== 1) ? 1 : 0;
+          }
+        }
+      }
+    }
+    /* 버전정보 (v7 이상 **필수**) — 마스크를 타지 않으므로 값까지 여기서 확정한다.
+       🚨 형식정보처럼 「자리만 예약」하면 안 된다. 예약만 하면 0 이 깔린 채로 나가고
+          스캐너는 그것을 유효하지 않은 버전으로 읽어 코드를 통째로 버린다. */
+    if (ver >= 7) {
+      var vb = versionBits(ver);
+      versionCells(size).forEach(function (pair, bi) {
+        var bit = (vb >>> bi) & 1;
+        m[pair[0][0]][pair[0][1]] = bit;
+        m[pair[1][0]][pair[1][1]] = bit;
+      });
+    }
+
+    m[size - 8][8] = 1;                                        // 고정 검은 모듈
+    // 형식정보 자리 예약 (값은 나중에)
+    for (i = 0; i <= 8; i++) {
+      if (m[8][i] === null) m[8][i] = 0;
+      if (m[i][8] === null) m[i][8] = 0;
+    }
+    for (i = 0; i < 8; i++) {
+      if (m[8][size - 1 - i] === null) m[8][size - 1 - i] = 0;
+      if (m[size - 1 - i][8] === null) m[size - 1 - i][8] = 0;
+    }
+  }
+
+  /** 함수 패턴 자리 표시 — 데이터를 흘릴 때 건너뛸 칸을 미리 잡아 둔다. */
+  function reservedMap(ver) {
+    var size = ver * 4 + 17;
+    var m = newMatrix(size);
+    placeFunction(m, ver);
+    var res = [];
+    for (var r = 0; r < size; r++) {
+      res.push([]);
+      for (var c = 0; c < size; c++) res[r].push(m[r][c] !== null);
+    }
+    return { reserved: res, base: m, size: size };
+  }
+
+  /** 지그재그로 데이터 비트를 흘린다(오른쪽 아래 → 위, 두 칸씩). */
+  function placeData(m, reserved, bits) {
+    var size = m.length, idx = 0, up = true;
+    for (var right = size - 1; right > 0; right -= 2) {
+      if (right === 6) right--;                                // 세로 타이밍 열은 건너뛴다
+      for (var v = 0; v < size; v++) {
+        var row = up ? (size - 1 - v) : v;
+        for (var k = 0; k < 2; k++) {
+          var col = right - k;
+          if (reserved[row][col]) continue;
+          m[row][col] = idx < bits.length ? bits[idx] : 0;
+          idx++;
+        }
+      }
+      up = !up;
+    }
+  }
+
+  var MASKS = [
+    function (r, c) { return (r + c) % 2 === 0; },
+    function (r) { return r % 2 === 0; },
+    function (r, c) { return c % 3 === 0; },
+    function (r, c) { return (r + c) % 3 === 0; },
+    function (r, c) { return (Math.floor(r / 2) + Math.floor(c / 3)) % 2 === 0; },
+    function (r, c) { return ((r * c) % 2) + ((r * c) % 3) === 0; },
+    function (r, c) { return (((r * c) % 2) + ((r * c) % 3)) % 2 === 0; },
+    function (r, c) { return (((r + c) % 2) + ((r * c) % 3)) % 2 === 0; }
+  ];
+
+  /** 형식정보 15비트 — BCH(15,5) + 마스크 0x5412. 오류정정 M = 00. */
+  function formatBits(maskId) {
+    var data = (0x00 << 3) | maskId;                           // M = 0b00
+    var d = data << 10;
+    for (var i = 4; i >= 0; i--) {
+      if ((d >>> (i + 10)) & 1) d ^= 0x537 << i;
+    }
+    return ((data << 10) | d) ^ 0x5412;
+  }
+
+  /** 형식정보 15비트가 들어가는 셀 **순서**. i번째 셀에 담기는 것은 bit(14 − i) 다.
+   *
+   *  🚨 **MSB 우선이다.** (8,0) 에 최상위 비트가 들어간다. 여기를 LSB 우선으로 깔면
+   *     값 자체는 유효한데 **읽는 순서가 뒤집혀** 스캐너의 BCH 검사가 깨지고,
+   *     코드가 **아예 인식되지 않는다.** (실제로 그렇게 냈다 — 되읽기 테스트가 같은
+   *     뒤집힌 순서로 읽어서 전부 초록이었고, 실기기에서만 드러났다)
+   *
+   *  ⚠️ 사본②의 좌하단 세로줄은 **7칸**이다. 고정 검은 모듈이 (size−8, 8) 을 차지하기
+   *     때문이다. 8칸으로 세면 나머지가 한 칸씩 밀린다. */
+  function formatCells(size) {
+    var c1 = [], c2 = [], i;
+    for (i = 0; i <= 5; i++) c1.push([8, i]);
+    c1.push([8, 7], [8, 8], [7, 8]);
+    for (i = 9; i <= 14; i++) c1.push([14 - i, 8]);
+    for (i = 0; i <= 6; i++) c2.push([size - 1 - i, 8]);      // 아래→위 7칸
+    for (i = 7; i <= 14; i++) c2.push([8, size - 15 + i]);    // 좌→우 8칸
+    return c1.concat(c2);
+  }
+
+  function placeFormat(m, maskId) {
+    var size = m.length, f = formatBits(maskId);
+    formatCells(size).forEach(function (cell, i) {
+      m[cell[0]][cell[1]] = (f >>> (14 - (i % 15))) & 1;      // ← MSB 우선
+    });
+    m[size - 8][8] = 1;                                        // 고정 검은 모듈
+  }
+
+  /** 벌점 — 규칙 4종(ISO §8.8.2). 낮을수록 좋은 마스크다. */
+  function penalty(m) {
+    var size = m.length, score = 0, r, c, i, run, prev;
+    // ① 같은 색 5칸 이상 연속
+    for (r = 0; r < size; r++) {
+      run = 1; prev = m[r][0];
+      for (c = 1; c < size; c++) {
+        if (m[r][c] === prev) { run++; } else { if (run >= 5) score += 3 + (run - 5); run = 1; prev = m[r][c]; }
+      }
+      if (run >= 5) score += 3 + (run - 5);
+    }
+    for (c = 0; c < size; c++) {
+      run = 1; prev = m[0][c];
+      for (r = 1; r < size; r++) {
+        if (m[r][c] === prev) { run++; } else { if (run >= 5) score += 3 + (run - 5); run = 1; prev = m[r][c]; }
+      }
+      if (run >= 5) score += 3 + (run - 5);
+    }
+    // ② 2×2 동색 블록
+    for (r = 0; r < size - 1; r++) {
+      for (c = 0; c < size - 1; c++) {
+        var v = m[r][c];
+        if (v === m[r][c + 1] && v === m[r + 1][c] && v === m[r + 1][c + 1]) score += 3;
+      }
+    }
+    // ③ 1:1:3:1:1 패턴 (파인더 오인 유발)
+    var P1 = [1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0];
+    var P2 = [0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1];
+    var match = function (get) {
+      var n = 0;
+      for (var s = 0; s + 11 <= size; s++) {
+        var a = true, b = true;
+        for (i = 0; i < 11; i++) {
+          var x = get(s + i);
+          if (x !== P1[i]) a = false;
+          if (x !== P2[i]) b = false;
+        }
+        if (a) n++;
+        if (b) n++;
+      }
+      return n;
+    };
+    for (r = 0; r < size; r++) score += 40 * match((function (rr) { return function (i2) { return m[rr][i2]; }; })(r));
+    for (c = 0; c < size; c++) score += 40 * match((function (cc) { return function (i2) { return m[i2][cc]; }; })(c));
+    // ④ 검은 모듈 비율 편차
+    var dark = 0;
+    for (r = 0; r < size; r++) for (c = 0; c < size; c++) if (m[r][c]) dark++;
+    var pct = dark * 100 / (size * size);
+    score += Math.floor(Math.abs(pct - 50) / 5) * 10;
+    return score;
+  }
+
+  /** 문자열 → 모듈 행렬(0/1). 담을 수 없으면 null. */
+  function matrix(text) {
+    var built = buildCodewords(text);
+    if (!built) return null;
+    var ver = built.ver;
+    var bits = [];
+    built.codewords.forEach(function (b) {
+      for (var i = 7; i >= 0; i--) bits.push((b >>> i) & 1);
+    });
+
+    var R = reservedMap(ver);
+    var best = null, bestScore = Infinity;
+    for (var maskId = 0; maskId < 8; maskId++) {
+      var m = R.base.map(function (row) { return row.slice(); });
+      placeData(m, R.reserved, bits);
+      for (var r = 0; r < R.size; r++) {
+        for (var c = 0; c < R.size; c++) {
+          if (!R.reserved[r][c] && MASKS[maskId](r, c)) m[r][c] ^= 1;
+        }
+      }
+      placeFormat(m, maskId);
+      var sc = penalty(m);
+      if (sc < bestScore) { bestScore = sc; best = m; }
+    }
+    return { modules: best, version: ver, size: R.size };
+  }
+
+  /** 문자열 → SVG 문자열. 담을 수 없으면 null(화면은 링크만 보여준다).
+   *
+   *  opts.label — 스크린리더가 읽을 이름. ⚠️ 기본값을 그대로 쓰면 안 되는 자리가 있다.
+   *    이 QR 은 「배포 링크」일 때도 있고 **그 사람의 숫자가 실린 링크**일 때도 있다.
+   *    후자에 「배포 링크」라고 읽어 주면 화면이 사실과 다른 말을 하는 것이 된다. */
+  function svg(text, opts) {
+    var q = matrix(text);
+    if (!q) return null;
+    opts = opts || {};
+    var label = String(opts.label || '배포 링크 QR 코드').replace(/[<>&"]/g, '');
+    var quiet = opts.quiet == null ? 4 : opts.quiet;           // 여백 4모듈은 규격 최소값
+    var n = q.size + quiet * 2;
+    var px = opts.size || 160;
+    var d = [];
+    for (var r = 0; r < q.size; r++) {
+      for (var c = 0; c < q.size; c++) {
+        if (q.modules[r][c]) d.push('M' + (c + quiet) + ' ' + (r + quiet) + 'h1v1h-1z');
+      }
+    }
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + n + ' ' + n + '" ' +
+           'width="' + px + '" height="' + px + '" shape-rendering="crispEdges" ' +
+           'role="img" aria-label="' + label + '">' +
+           '<rect width="' + n + '" height="' + n + '" fill="#fff"/>' +
+           '<path d="' + d.join('') + '" fill="#000"/></svg>';
+  }
+
+  global.BOOTH_QR = {
+    matrix: matrix, svg: svg,
+    capacityBytes: capacityBytes, MAX_VER: MAX_VER,
+    // ↓ 검증 전용 노출. 테스트가 **되읽어서** 확인하려면 블록 제원이 필요하다.
+    _SPEC_M: SPEC_M,
+    _gf: { gmul: gmul, rsPoly: rsPoly, rsEncode: rsEncode, EXP: EXP, LOG: LOG },
+    _formatBits: formatBits, _formatCells: formatCells,
+    _versionBits: versionBits, _versionCells: versionCells,
+    _reservedMap: reservedMap, _MASKS: MASKS
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+// [[QR:end]]
+</script>
+
+<script>
+(function () {
+  'use strict';
+  var C = window.BOOTH_CODEC, QR = window.BOOTH_QR;
+
+  /* 공개 주소 — 배포 SSOT(scripts/deploy-survey.ps1 $MAP)와 같은 값. 로컬·파일로 열렸을 때도
+     QR 에는 공개 주소를 싣는다(상담자 기기의 카메라 앱이 여는 주소이므로). */
+  var PUBLIC_BASE = 'https://hland91-beep.github.io/booth/';
+  var DEEP_SURVEY = 'https://hland91-beep.github.io/ddlife/?g=1';   // 원장셈 「자산의 국경」 5분 문진 직행
+  var EVENTS = { ps2026: '2026 성형외과학회 · 파르나스호텔' };            // 행사코드 → 화면 표기. 일자는 확정되면 여기에
+  var SLOT = { start: 10 * 60, end: 17 * 60, step: 10 };               // 현장 브리핑 슬롯(분) — 행사마다 여기만 고친다
+  var DRAFT_TTL = 3 * 60 * 1000;                                       // 공용 기기 잔존 방지: 3분 지난 초안은 버린다
+  var REC_KEY = 'booth.records', CNS_KEY = 'booth.counselor', DRAFT_KEY = 'booth.draft', STAT_KEY = 'booth.stats', DEV_KEY = 'booth.device', IMP_KEY = 'booth.importedStats';
+
+  function baseUrl() {
+    var l = location;
+    if (/^https?:$/.test(l.protocol) && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(l.hostname)) return l.origin + l.pathname;
+    return PUBLIC_BASE;
+  }
+  function param(name) { var m = (location.search || '').match(new RegExp('[?&]' + name + '=([^&]*)')); return m ? decodeURIComponent(m[1]) : null; }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); }
+  function nl(s) { return esc(s).replace(/\n/g, '<br>'); }
+  function $(id) { return document.getElementById(id); }
+  function toast(msg) { var t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast._h); toast._h = setTimeout(function () { t.classList.remove('on'); }, 2200); }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function hhmm(ts) { var d = new Date(ts); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function ymd(d) { d = d || new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function fmtPhone(p) { p = C.cleanPhone(p); return p.length === 11 ? p.slice(0, 3) + '-' + p.slice(3, 7) + '-' + p.slice(7) : p.length === 10 ? p.slice(0, 3) + '-' + p.slice(3, 6) + '-' + p.slice(6) : p; }
+  function noticeHtml(full) { return '<p class="basis">' + esc(C.NOTICE) + (full ? ' ' + esc(C.NOTICE2) : '') + '</p>'; }
+  function setProg(i, n) { var p = $('prog'); if (i == null) { p.hidden = true; return; } p.hidden = false; $('progi').style.width = Math.round(i / n * 100) + '%'; }
+  function render(html) { $('app').innerHTML = html; window.scrollTo(0, 0); }
+  function segHtml(id, opts, cur) {
+    return '<div class="seg" id="' + id + '">' + opts.map(function (o) {
+      var label = typeof o === 'string' ? o : o[0], val = typeof o === 'string' ? o : o[1];
+      return '<button class="opt' + (cur === val ? ' sel' : '') + '" data-v="' + esc(val) + '">' + esc(label) + '</button>';
+    }).join('') + '</div>';
+  }
+  function segBind(id, onPick) {
+    Array.prototype.forEach.call($(id).children, function (b) {
+      b.onclick = function () {
+        var on = b.classList.contains('sel');
+        Array.prototype.forEach.call($(id).children, function (x) { x.classList.remove('sel'); });
+        if (!on) b.classList.add('sel');
+        onPick(on ? null : b.getAttribute('data-v'));
+      };
+    });
+  }
+  function lsGet(k, d) { try { var v = JSON.parse(localStorage.getItem(k) || 'null'); return v === null ? d : v; } catch (e) { return d; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  function deviceId() { var id = lsGet(DEV_KEY, ''); if (!id) { id = 'd' + Math.random().toString(36).slice(2, 8); lsSet(DEV_KEY, id); } return id; }
+  /* 기기 카운터 — 공용 태블릿에서만 의미가 있다(참가자 본인 폰의 카운터는 우리 손에 안 온다). 시작·완료·QR 발급. */
+  function bump(key) { var st = lsGet(STAT_KEY, { started: 0, completed: 0, qr: 0 }); st[key] = (st[key] || 0) + 1; st.device = deviceId(); lsSet(STAT_KEY, st); }
+  function copyText(t, msg) {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(function () { toast(msg); }, function () { fallbackCopy(t, msg); });
+    else fallbackCopy(t, msg);
+  }
+  function fallbackCopy(t, msg) {
+    var ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); toast(msg); } catch (e) { toast('복사가 막혀 있습니다 — 길게 눌러 복사해 주세요.'); }
+    document.body.removeChild(ta);
+  }
+  function download(name, text, type) {
+    var blob = new Blob([text], { type: type || 'application/json' });
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 참가자 흐름 (Lead 계층)
+  // ═══════════════════════════════════════════════════════════════════════════
+  var S = { event: param('e') || '', a: {}, startedAt: 0, name: '', hospital: '', phone: '', consent1: false, consent2: false, marketing: false };
+
+  function saveDraft() { try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ a: S.a, startedAt: S.startedAt, t: Date.now() })); } catch (e) {} }
+  function loadDraft() {
+    try {
+      var d = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || 'null');
+      if (d && d.a && Date.now() - d.t < DRAFT_TTL) return d;
+    } catch (e) {}
+    return null;
+  }
+  /* 「처음으로」 = 완전 소거. 앞사람의 답·성함·전화가 다음 사람 화면에 남지 않는다(원장셈 세미나 결함의 재발 방지). */
+  function resetAll() {
+    S = { event: S.event, a: {}, startedAt: 0, name: '', hospital: '', phone: '', consent1: false, consent2: false, marketing: false };
+    try { sessionStorage.removeItem(DRAFT_KEY); } catch (e) {}
+    intro();
+  }
+
+  function intro() {
+    setProg(null); $('hd').textContent = 'AssetTect 글로벌 자산·보장 1분 점검';
+    var draft = loadDraft();
+    render(
+      '<div class="sec">' +
+        '<p class="eyebrow">' + esc(EVENTS[S.event] || '학회 부스') + ' · 1분 점검</p>' +
+        '<h2>내 자산과 보장은 한 나라·한 통화에 집중되어 있지 않습니까?</h2>' +
+        '<p class="lead">탭 10번, 약 60초. 대략적인 답이면 충분합니다. 점검 범위는 달러·해외자산·국제보장·자녀교육·해외체류·승계이고, 결과로 <b>먼저 이야기할 상담 주제</b>가 정리됩니다. 결과 화면의 QR을 부스 상담 담당자에게 보여 주시면 상담 일정을 바로 잡을 수 있습니다.</p>' +
+        '<button class="btn p" id="b-start">1분 점검 시작</button>' +
+        (draft ? '<button class="btn ghost" id="b-resume">조금 전 답하던 곳에서 이어가기</button>' : '') +
+        noticeHtml(true) +
+      '</div>');
+    $('b-start').onclick = function () { S.a = {}; S.startedAt = Date.now(); try { sessionStorage.removeItem(DRAFT_KEY); } catch (e) {} bump('started'); question(0); };
+    if (draft) $('b-resume').onclick = function () { S.a = draft.a; S.startedAt = draft.startedAt || Date.now(); var i = 0; while (i < C.QUESTIONS.length && S.a[C.QUESTIONS[i].id] !== undefined) i++; if (i >= C.QUESTIONS.length) result(); else question(i); };
+  }
+
+  function question(i) {
+    var qd = C.QUESTIONS[i], n = C.QUESTIONS.length;
+    setProg(i, n); $('hd').textContent = '질문 ' + (i + 1) + ' / ' + n;
+    var html = '<div class="sec"><p class="eyebrow">' + (i + 1) + ' / ' + n + '</p><h2>' + nl(qd.title) + '</h2>' +
+      (qd.lead ? '<p class="lead">' + esc(qd.lead) + '</p>' : '');
+    if (qd.type === 'multi') {
+      var mask = S.a[qd.id] || 0;
+      html += '<div class="opts" id="opts">';
+      qd.opts.forEach(function (o) { html += '<button class="opt' + (mask & o[1] ? ' sel' : '') + '" data-v="' + o[1] + '">' + esc(o[0]) + '</button>'; });
+      html += '<button class="opt' + (S.a[qd.id] === 0 ? ' sel' : '') + '" data-v="0">' + esc(qd.none) + '</button></div>';
+      html += '<div class="row"><button class="btn o" id="b-back">← 이전</button><button class="btn p" id="b-next"' + (S.a[qd.id] === undefined ? ' disabled' : '') + '>다음 →</button></div></div>';
+      render(html);
+      Array.prototype.forEach.call($('opts').children, function (b) {
+        b.onclick = function () {
+          var bit = +b.getAttribute('data-v');
+          if (bit === 0) mask = 0; else { mask = (mask & 15) ^ bit; }
+          S.a[qd.id] = mask; saveDraft();
+          Array.prototype.forEach.call($('opts').children, function (x) { var v = +x.getAttribute('data-v'); x.classList.toggle('sel', v === 0 ? mask === 0 : !!(mask & v)); });
+          $('b-next').disabled = false;
+        };
+      });
+      $('b-next').onclick = function () { if (i + 1 < n) question(i + 1); else result(); };
+    } else {
+      var opts = qd.type === 'yn' ? C.YN : qd.type === 'band' ? qd.bands : qd.opts;
+      html += '<div class="opts' + (qd.type === 'band' ? ' grid' : '') + '" id="opts">';
+      opts.forEach(function (o, k) {
+        var val = qd.type === 'yn' ? o[1] : k;
+        html += '<button class="opt' + (S.a[qd.id] === val ? ' sel' : '') + '" data-v="' + val + '">' + esc(o[0]) + '</button>';
+      });
+      html += '</div><div class="row"><button class="btn o" id="b-back">' + (i === 0 ? '처음으로' : '← 이전') + '</button></div></div>';
+      render(html);
+      Array.prototype.forEach.call($('opts').children, function (b) {
+        b.onclick = function () {
+          S.a[qd.id] = +b.getAttribute('data-v'); saveDraft();
+          if (i + 1 < n) question(i + 1); else result();
+        };
+      });
+    }
+    $('b-back').onclick = function () { if (i === 0) resetAll(); else question(i - 1); };
+  }
+
+  function result() {
+    var a = S.a, ax = C.axes(a), fx = C.fxShare(a);
+    if (!S.completedMark) { S.completedMark = true; bump('completed'); }
+    setProg(null); $('hd').textContent = '점검 결과';
+    var html = '<div class="sec"><p class="eyebrow">점검 결과 · 상담 주제</p>';
+    ax.forEach(function (k, i) {
+      html += '<div class="card' + (i === 0 ? ' top' : '') + '"><div class="k">' + (i === 0 ? '나의 1순위 상담 주제' : '함께 점검할 주제') + '</div><div class="t">' + k + ' ' + esc(C.AXES[k]) + '</div><p>' + esc(C.AXIS_TEXT[k]) + '</p></div>';
+    });
+    var lines = [C.REFLECT[a.q9]];
+    if (fx !== null) lines.push('금융자산 중 외화표시는 약 <b>' + fx + '%</b>입니다. 점검 기준과의 비교는 상담에서 확인합니다.');
+    lines.push('다음 단계: <b>' + esc(C.pickLabel('q10', a.q10)) + '</b> — 상담 담당자에게 QR을 보여 주시면 일정을 잡습니다.');
+    html += '<div class="reward">' + lines.join('<br>') + '</div>';
+    html += '<button class="btn y" id="b-qr">상담 담당자에게 보여 줄 QR 만들기</button>' +
+      '<a class="btn o" style="margin-top:10px" href="' + DEEP_SURVEY + '" target="_blank" rel="noopener">원장셈 5분 정밀 문진으로 이어가기</a>' +
+      '<button class="btn ghost" id="b-home">처음으로</button>' + noticeHtml(true) + '</div>';
+    render(html);
+    $('b-qr').onclick = contact;
+    $('b-home').onclick = resetAll;
+  }
+
+  function contact() {
+    $('hd').textContent = '연락처와 동의';
+    render(
+      '<div class="sec"><p class="eyebrow">상담 예약을 위한 연락처</p>' +
+        '<h2>상담 담당자가 확인할 정보입니다.</h2>' +
+        '<label class="f" for="f-name">성함</label><input type="text" id="f-name" maxlength="' + C.NAME_MAX + '" placeholder="예: 홍길동" value="' + esc(S.name) + '">' +
+        '<label class="f" for="f-hosp">병(의)원명 · 소속</label><input type="text" id="f-hosp" maxlength="' + C.HOSP_MAX + '" placeholder="예: ○○성형외과의원" value="' + esc(S.hospital) + '"><p class="hint">' + C.HOSP_MAX + '자까지 QR에 실립니다.</p>' +
+        '<label class="f" for="f-phone">휴대전화</label><input type="tel" id="f-phone" inputmode="numeric" placeholder="예: 010-1234-5678" value="' + esc(fmtPhone(S.phone)) + '">' +
+        '<label class="consent"><input type="checkbox" id="f-c1"' + (S.consent1 ? ' checked' : '') + '><span><b>[필수] 개인정보 수집·이용</b> — 항목: 성함·병(의)원명·휴대전화번호 / 목적: 점검 결과 제공, 상담 예약, 본인 확인 / 보유: 학회 종료 후 6개월, 상담이 진행되면 상담 기록으로 이관. 동의하지 않으셔도 점검 결과는 보실 수 있으나 상담 예약은 진행되지 않습니다.</span></label>' +
+        '<label class="consent"><input type="checkbox" id="f-c2"' + (S.consent2 ? ' checked' : '') + '><span><b>[필수] 상담 예약 연락</b> — 예약 확인과 일정 조율을 위해 휴대전화로 연락합니다.</span></label>' +
+        '<label class="consent" style="background:transparent;border:1px dashed var(--line)"><input type="checkbox" id="f-c3"' + (S.marketing ? ' checked' : '') + '><span><b>[선택] 마케팅 정보 수신</b> — 향후 세미나·리포트·콘텐츠 안내. 동의하지 않아도 상담 예약에는 영향이 없습니다.</span></label>' +
+        '<p class="hint">수집하지 않는 것: 주민등록번호·계좌번호·여권번호·상세 투자내역·건강정보. 동의 문안 booth-consent-v1.</p>' +
+        '<div class="row"><button class="btn o" id="b-back">← 결과</button><button class="btn y" id="b-make" disabled>QR 만들기</button></div>' +
+        noticeHtml() + '</div>');
+    var ph = $('f-phone');
+    ph.addEventListener('input', function () { this.value = fmtPhone(this.value); check(); });
+    ['f-name', 'f-hosp'].forEach(function (id) { $(id).addEventListener('input', check); });
+    ['f-c1', 'f-c2', 'f-c3'].forEach(function (id) { $(id).addEventListener('change', check); });
+    function check() {
+      S.name = $('f-name').value.trim(); S.hospital = $('f-hosp').value.trim(); S.phone = C.cleanPhone($('f-phone').value);
+      S.consent1 = $('f-c1').checked; S.consent2 = $('f-c2').checked; S.marketing = $('f-c3').checked;
+      $('b-make').disabled = !(S.name && S.phone.length >= 9 && S.consent1 && S.consent2);
+    }
+    check();
+    $('b-back').onclick = result;
+    $('b-make').onclick = qrScreen;
+  }
+
+  /* 오버플로 사다리 — 인코더가 null 이면 병원명 → 성함 순으로 덜어내고 다시 그린다.
+     그래도 안 되면 QR 없이 링크만 보여준다(틀린 QR 을 그리느니 안 그린다). */
+  function buildQr() {
+    var dur = S.startedAt ? Math.round((Date.now() - S.startedAt) / 1000) : 0;
+    var rec = { name: S.name, hospital: S.hospital, phone: S.phone, a: S.a, marketing: S.marketing, dur: dur, ts: Date.now() };
+    var steps = [{}, { hospital: '' }, { hospital: '', name: '' }], dropped = null;
+    for (var i = 0; i < steps.length; i++) {
+      var r = Object.assign({}, rec, steps[i]);
+      var url = baseUrl() + '?r=' + C.encode(r);
+      var svg = QR.svg(url, { label: '상담 담당자에게 보여 줄 응답 QR', size: 292 });
+      if (svg) return { url: url, svg: svg, dropped: dropped };
+      dropped = i === 0 ? '병원명' : '병원명과 성함';
+    }
+    return { url: baseUrl() + '?r=' + C.encode(Object.assign({}, rec, { hospital: '', name: '' })), svg: null, dropped: dropped };
+  }
+
+  function qrScreen() {
+    $('hd').textContent = '응답 QR';
+    var q = buildQr();
+    if (!S.qrMark) { S.qrMark = true; bump('qr'); }
+    render(
+      '<div class="sec" style="text-align:center">' +
+        '<p class="eyebrow">상담 담당자에게 보여 주세요</p>' +
+        '<h2>화면 밝기를 최대로 올려 주세요.</h2>' +
+        (q.svg ? '<div class="qrbox">' + q.svg + '</div>' : '<p class="err">QR을 그릴 수 없어 링크로 대신합니다.</p>') +
+        (q.dropped ? '<p class="hint">' + esc(q.dropped) + '이(가) 길어 QR에는 싣지 않았습니다 — 상담 담당자에게 말씀해 주세요.</p>' : '') +
+        '<p class="lead" style="margin-top:12px">' + esc(S.name) + ' · ' + esc(fmtPhone(S.phone)) + '</p>' +
+        '<details' + (q.svg ? '' : ' open') + '><summary>QR이 읽히지 않으면 여기를 눌러 주세요</summary>' +
+          '<div class="linkbox" id="link">' + esc(q.url) + '</div>' +
+          '<div class="row"><button class="btn o" id="b-copy">링크 복사</button><button class="btn p" id="b-share">상담사에게 보내기</button></div>' +
+        '</details>' +
+        '<button class="btn ghost" id="b-home" style="margin-top:16px">처음으로 (내용 지우기)</button>' +
+        noticeHtml() + '</div>');
+    $('b-copy').onclick = function () { copyText(q.url, '링크를 복사했습니다.'); };
+    $('b-share').onclick = function () {
+      if (navigator.share) navigator.share({ title: 'AssetTect 1분 점검 — 응답', text: q.url }).catch(function () {});
+      else copyText(q.url, '복사했습니다. 상담사에게 전달해 주세요.');
+    };
+    $('b-home').onclick = resetAll;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 참가자 예약 확인 카드(?b=) — 상담자 태블릿의 예약 카드 QR 을 찍으면 이 화면. 서버 없는 QR-03.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function bookingText(b) {
+    var when = b.at ? b.at.replace('T', ' ') : (b.channel === 'now' ? '오늘 부스에서' : '학회 후 일정 조율');
+    return '[AssetTect] ' + (b.name ? b.name + ' 원장님, ' : '') + '상담 예약이 접수되었습니다. 주제: ' + C.AXES[b.topics[0]] + ' · 방식: ' + C.channelLabel(b.channel) + ' · 일시: ' + when + (b.counselor ? ' · 담당: ' + b.counselor : '') + '.';
+  }
+  function icsFor(b) {
+    if (!b.at) return null;
+    var st = b.at.replace(/[-:]/g, '').replace('T', 'T') + '00';
+    var d = new Date(b.at.slice(0, 4), +b.at.slice(5, 7) - 1, +b.at.slice(8, 10), +b.at.slice(11, 13), +b.at.slice(14, 16));
+    d.setMinutes(d.getMinutes() + (b.channel === 'now' ? 10 : 30));
+    var en = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + 'T' + pad(d.getHours()) + pad(d.getMinutes()) + '00';
+    var now = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+    return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//AssetTect//booth//KO', 'BEGIN:VEVENT', 'UID:booth-' + st + '@assettect', 'DTSTAMP:' + now, 'DTSTART:' + st, 'DTEND:' + en,
+            'SUMMARY:AssetTect 상담 — ' + C.AXES[b.topics[0]], 'DESCRIPTION:' + C.channelLabel(b.channel) + (b.counselor ? ' / 담당 ' + b.counselor : '') + ' / 준비: ' + C.PREP.join(', '), 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  }
+  function bookingCard(b) {
+    setProg(null); $('hd').textContent = '예약 확인';
+    var when = b.at ? b.at.replace('T', ' ') : (b.channel === 'now' ? '오늘 부스에서' : '학회 후 일정 조율 (담당자가 연락드립니다)');
+    render(
+      '<div class="sec"><p class="eyebrow">' + esc(EVENTS[S.event] || '학회 부스') + '</p>' +
+        '<h2>' + esc(b.name ? b.name + ' 원장님, ' : '') + '예약이 접수되었습니다.</h2>' +
+        '<div class="sum"><span class="k">상담 주제</span><span class="v">' + esc(C.AXES[b.topics[0]]) + ' <span class="hint" style="display:inline">(함께: ' + esc(C.AXES[b.topics[1]]) + ')</span></span></div>' +
+        '<div class="sum"><span class="k">예약 방식</span><span class="v">' + esc(C.channelLabel(b.channel)) + '</span></div>' +
+        '<div class="sum"><span class="k">일시</span><span class="v">' + esc(when) + '</span></div>' +
+        (b.counselor ? '<div class="sum"><span class="k">담당자</span><span class="v">' + esc(b.counselor) + '</span></div>' : '') +
+        '<div class="reward">' + esc(C.REFLECT[b.q9]) + '<br><b>상담 전 준비하면 좋은 항목</b><br>' + C.PREP.map(function (p) { return '· ' + esc(p); }).join('<br>') + '</div>' +
+        (b.at ? '<div class="row"><button class="btn o" id="b-ics">캘린더에 추가(.ics)</button><a class="btn o" id="b-gcal" target="_blank" rel="noopener">Google 캘린더</a></div>' : '') +
+        '<button class="btn ghost" id="b-home" style="margin-top:12px">처음으로</button>' +
+        noticeHtml(true) + '</div>');
+    if (b.at) {
+      $('b-ics').onclick = function () { download('assettect-booking.ics', icsFor(b), 'text/calendar'); };
+      var st = b.at.replace(/[-:]/g, '') + '00';
+      var d = new Date(b.at.slice(0, 4), +b.at.slice(5, 7) - 1, +b.at.slice(8, 10), +b.at.slice(11, 13), +b.at.slice(14, 16));
+      d.setMinutes(d.getMinutes() + (b.channel === 'now' ? 10 : 30));
+      var en = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + 'T' + pad(d.getHours()) + pad(d.getMinutes()) + '00';
+      $('b-gcal').href = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent('AssetTect 상담 — ' + C.AXES[b.topics[0]]) + '&dates=' + st + '/' + en + '&details=' + encodeURIComponent(C.channelLabel(b.channel) + ' / 준비: ' + C.PREP.join(', '));
+    }
+    $('b-home').onclick = function () { try { history.replaceState({}, '', location.pathname + (S.event ? '?e=' + encodeURIComponent(S.event) : '')); } catch (e) {} intro(); };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 상담자 화면 (Advisor 계층) — 데이터는 이 기기의 localStorage 에만 있다. 반입이 끝나면 지운다.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function records() { return lsGet(REC_KEY, []); }
+  function saveRecords(list) { lsSet(REC_KEY, list); }
+  function counselor() { try { return localStorage.getItem(CNS_KEY) || ''; } catch (e) { return ''; } }
+  function heatLabel(code) { for (var i = 0; i < C.HEAT.length; i++) if (C.HEAT[i][1] === code) return C.HEAT[i][0]; return ''; }
+  function allStats() {
+    var mine = lsGet(STAT_KEY, null), imported = lsGet(IMP_KEY, []);
+    var out = imported.slice();
+    if (mine) { mine.device = mine.device || deviceId(); out = out.filter(function (s) { return s.device !== mine.device; }).concat([mine]); }
+    return out;
+  }
+
+  /* 같은 전화번호는 1건으로 병합 — 답은 최신 것, 상담 기록은 새 레코드에 없으면 이전 것을 지킨다. */
+  function upsert(rec) {
+    var list = records(), found = -1;
+    list.forEach(function (r, i) { if (r.phone === rec.phone) found = i; });
+    if (found >= 0) {
+      var old = list[found];
+      if (!rec.booking && old.booking) rec.booking = old.booking;
+      rec.scannedAt = old.scannedAt || rec.scannedAt;
+      list[found] = rec;
+    } else list.push(rec);
+    saveRecords(list);
+  }
+
+  function summaryHtml(list) {
+    var s = C.summarize(list, allStats());
+    var chan = C.CHANNELS.map(function (c) { return esc(c[0]) + ' ' + (s.channel[c[1]] || 0); }).join(' · ');
+    var cns = Object.keys(s.counselor).map(function (k) { return esc(k) + ' ' + s.counselor[k]; }).join(' · ') || '-';
+    return '<div class="kpi"><div><b>' + s.scanned + '</b><span>응답 스캔</span></div><div><b>' + s.onsite + '</b><span>현장 브리핑</span></div><div><b>' + s.confirmed + '</b><span>예약확정</span></div></div>' +
+      '<div class="sum"><span class="k">후속연락 · 보류</span><span class="v">' + s.followup + ' · ' + s.hold + '</span></div>' +
+      '<div class="sum"><span class="k">관심도 높음 · 보통 · 장기</span><span class="v">' + s.heat.hot + ' · ' + s.heat.warm + ' · ' + s.heat.nurture + '</span></div>' +
+      '<div class="sum"><span class="k">방식</span><span class="v">' + chan + '</span></div>' +
+      '<div class="sum"><span class="k">상담자별</span><span class="v">' + cns + '</span></div>' +
+      '<div class="sum"><span class="k">평균 응답 소요(시작→QR)</span><span class="v">' + (s.durAvg === null ? '-' : esc(C.fmtDur(s.durAvg)) + ' (' + s.durN + '건)') + '</span></div>' +
+      '<div class="sum"><span class="k">공용 기기 카운터 · 시작 → 완료 → QR</span><span class="v">' + s.device.started + ' → ' + s.device.completed + ' → ' + s.device.qr + ' <span class="hint" style="display:inline">(' + s.device.devices + '대)</span></span></div>';
+  }
+
+  function consultHome(msg) {
+    setProg(null); $('hd').textContent = '상담자 화면';
+    var list = records().sort(function (x, y) { return (y.scannedAt || 0) - (x.scannedAt || 0); });
+    var html = '<div class="sec"><p class="eyebrow">상담자 · ' + esc(EVENTS[S.event] || '부스') + '</p>' +
+      '<label class="f" for="c-name">상담자 이름</label><input type="text" id="c-name" value="' + esc(counselor()) + '" placeholder="예: 홍길동">' +
+      '<div class="row"><button class="btn p" id="b-scan">QR 스캔</button></div>' +
+      '<p class="hint">화면 안 스캔은 안드로이드 Chrome 에서 동작합니다. 안 되면 카메라 앱으로 QR을 찍어 열어 주세요.</p>' +
+      '<div id="scanbox"></div>' +
+      '<label class="f" for="c-link">받은 링크 붙여넣기</label><input type="text" id="c-link" placeholder="https://…/booth/?r=…">' +
+      '<div class="row"><button class="btn o" id="b-open">열기</button></div>' +
+      '</div>';
+    html += '<div class="sec"><p class="eyebrow">오늘 목록 · ' + list.length + '건</p><div class="list">';
+    if (!list.length) html += '<p class="hint">아직 스캔한 응답이 없습니다.</p>';
+    list.forEach(function (r, i) {
+      var ax = C.axes(r.a), bk = r.booking || {};
+      html += '<button class="it" data-i="' + i + '"><b>' + esc(r.name || '(성함 없음)') + '</b> · ' + esc(r.hospital || '-') + ' · ' + esc(fmtPhone(r.phone)) + '<br>' +
+        '<span class="chip">' + ax.join('·') + '</span>' + (bk.heat ? '<span class="chip warm">' + esc(heatLabel(bk.heat)) + '</span>' : '') + esc(hhmm(r.ts)) + ' 응답' +
+        (bk.status ? ' · <b>' + esc(bk.status) + '</b>' : '') + (bk.at ? ' · ' + esc(bk.at.replace('T', ' ')) : '') + (bk.channel ? ' · ' + esc(C.channelLabel(bk.channel)) : '') + '</button>';
+    });
+    html += '</div>' + (list.length ?
+      '<div class="row"><button class="btn y" id="b-export">부스 JSON 내보내기</button><button class="btn o" id="b-export-at">AssetTect 가져오기 파일</button></div>' : '') +
+      '<div class="row"><button class="btn o" id="b-import">다른 기기 JSON 가져오기(병합)</button></div><input type="file" id="f-import" accept=".json,application/json" class="hidden">' +
+      (list.length ? '<div class="row"><button class="btn ghost" id="b-wipe">기기에서 지우기</button></div>' : '') + '</div>';
+    html += '<div class="sec"><p class="eyebrow">집계 · 서버 없는 대시보드</p>' + summaryHtml(list) + '<p class="hint">여러 태블릿의 부스 JSON을 운영 노트북에서 「가져오기(병합)」하면 여기에 합산됩니다. 참가자 본인 폰의 유입·시작은 셀 수 없고, 공용 태블릿의 카운터와 응답 QR 속 소요시간만 셉니다.</p>' + noticeHtml() + '</div>';
+    render(html);
+    if (msg) toast(msg);
+    $('c-name').addEventListener('input', function () { try { localStorage.setItem(CNS_KEY, this.value.trim()); } catch (e) {} });
+    $('b-scan').onclick = startScan;
+    $('b-open').onclick = function () { var rec = C.decode($('c-link').value); if (!rec) { toast('읽을 수 없는 링크입니다.'); return; } openRecord(rec, true); };
+    $('c-link').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); $('b-open').onclick(); } });
+    Array.prototype.forEach.call(document.querySelectorAll('.list .it'), function (b) {
+      b.onclick = function () { openRecord(list[+b.getAttribute('data-i')], false); };
+    });
+    if (list.length) { $('b-export').onclick = exportBooth; $('b-export-at').onclick = exportAssetTect; $('b-wipe').onclick = wipe; }
+    $('b-import').onclick = function () { $('f-import').click(); };
+    $('f-import').addEventListener('change', function () {
+      var f = this.files && this.files[0]; if (!f) return;
+      var rd = new FileReader();
+      rd.onload = function () { importBooth(String(rd.result || '')); };
+      rd.readAsText(f);
+    });
+  }
+
+  /* 다른 기기의 부스 JSON 병합 — 전화번호 키. 저장 시각이 늦은 쪽의 답·상담 기록을 취한다. 기기 카운터는 기기 id 로 중복 없이 합산. */
+  function importBooth(text) {
+    var obj;
+    try { obj = JSON.parse(text); } catch (e) { toast('JSON 을 읽을 수 없습니다.'); return; }
+    if (!obj || obj.source !== 'booth' || !Array.isArray(obj.records)) { toast('부스 JSON 내보내기 파일이 아닙니다.'); return; }
+    var list = records(), added = 0, updated = 0;
+    obj.records.forEach(function (r) {
+      if (!r || !r.phone || !r.a) return;
+      var i = -1;
+      list.forEach(function (x, k) { if (x.phone === r.phone) i = k; });
+      if (i < 0) { list.push(r); added++; return; }
+      var mine = list[i], tm = (mine.booking && mine.booking.savedAt) || '', tr = (r.booking && r.booking.savedAt) || '';
+      if (tr > tm || (!mine.booking && r.booking)) { list[i] = r; updated++; }
+    });
+    saveRecords(list);
+    var imp = lsGet(IMP_KEY, []);
+    (obj.stats || []).forEach(function (st) {
+      if (!st || !st.device || st.device === deviceId()) return;
+      imp = imp.filter(function (x) { return x.device !== st.device; }).concat([st]);
+    });
+    lsSet(IMP_KEY, imp);
+    consultHome('병합: 추가 ' + added + '건 · 갱신 ' + updated + '건 · 기기 카운터 ' + imp.length + '대');
+  }
+
+  var scanTimer = null, scanStream = null;
+  function stopScan() {
+    clearInterval(scanTimer); scanTimer = null;
+    if (scanStream) { scanStream.getTracks().forEach(function (t) { t.stop(); }); scanStream = null; }
+  }
+  function startScan() {
+    var box = $('scanbox');
+    if (!('BarcodeDetector' in window) || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      box.innerHTML = '<p class="err">이 기기는 화면 안 스캔을 지원하지 않습니다. 카메라 앱으로 QR을 찍어 열거나, 위 칸에 링크를 붙여 넣어 주세요.</p>';
+      return;
+    }
+    box.innerHTML = '<video id="cam" playsinline muted></video><button class="btn ghost" id="b-stop">스캔 중지</button>';
+    var det;
+    try { det = new BarcodeDetector({ formats: ['qr_code'] }); } catch (e) { box.innerHTML = '<p class="err">QR 감지기를 만들 수 없습니다 — 카메라 앱을 이용해 주세요.</p>'; return; }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false }).then(function (stream) {
+      scanStream = stream;
+      var v = $('cam'); v.srcObject = stream; v.play();
+      scanTimer = setInterval(function () {
+        det.detect(v).then(function (codes) {
+          if (!codes || !codes.length) return;
+          var rec = C.decode(codes[0].rawValue);
+          if (!rec) return;
+          stopScan(); openRecord(rec, true);
+        }).catch(function () {});
+      }, 300);
+      $('b-stop').onclick = function () { stopScan(); box.innerHTML = ''; };
+    }).catch(function () { box.innerHTML = '<p class="err">카메라를 열 수 없습니다 — 권한을 허용했는지 확인하거나 카메라 앱을 이용해 주세요.</p>'; });
+  }
+
+  function slotLabel(min) { return pad(Math.floor(min / 60)) + ':' + pad(min % 60); }
+
+  function openRecord(rec, fresh) {
+    stopScan();
+    if (fresh) rec.scannedAt = Date.now();
+    var a = rec.a, ax = C.axes(a), fx = C.fxShare(a), types = C.fxTypeLabels(a.q8);
+    var bk = rec.booking || {};
+    var st = { channel: bk.channel || C.pickCode('q10', a.q10), status: bk.status || '스캔완료', heat: bk.heat || null, next: bk.next || null,
+               date: bk.at ? bk.at.slice(0, 10) : ymd(), slot: bk.at ? bk.at.slice(11, 16) : null, time: bk.at ? bk.at.slice(11, 16) : '' };
+    $('hd').textContent = '응답 확인 · 상담';
+    var html = '<div class="sec">' +
+      '<p class="big">' + esc(rec.name || '(성함 없음)') + '</p>' +
+      '<p class="lead" style="margin:2px 0 8px">' + esc(rec.hospital || '병(의)원명 없음') + ' · <a class="tel" href="tel:' + esc(rec.phone) + '">' + esc(fmtPhone(rec.phone)) + '</a> · ' + esc(hhmm(rec.ts)) + ' 응답' + (rec.dur > 0 ? ' · ' + esc(C.fmtDur(rec.dur)) + ' 소요' : '') + (rec.marketing ? ' · 마케팅 수신 동의' : '') + '</p>' +
+      '<p>' + ax.map(function (k, i) { return '<span class="chip">' + (i === 0 ? '1순위 ' : '함께 ') + k + ' ' + esc(C.AXES[k]) + '</span>'; }).join('') + '</p>' +
+      '<div class="reward"><b>상담 시작 문장</b><br>' + esc(rec.name ? rec.name + ' 원장님, ' : '') + '먼저 확인하고 싶으신 것이 <b>' + esc(C.pickLabel('q9', a.q9)) + '</b>이시군요. 그 순서로 보겠습니다. 오늘은 상품이 아니라 자금의 목적·기간·유동성과 국가별 제약을 먼저 확인합니다.</div>' +
+      '<div class="sum"><span class="k">희망 방식</span><span class="v">' + esc(C.pickLabel('q10', a.q10)) + '</span></div>' +
+      '<div class="sum"><span class="k">관심 해외 자산 유형</span><span class="v">' + esc(types.length ? types.join(', ') : '없다') + '</span></div>' +
+      '<div class="sum"><span class="k">원화 금융자산</span><span class="v">' + esc(C.bandLabel('q6', a.q6)) + '</span></div>' +
+      '<div class="sum"><span class="k">해외·외화표시</span><span class="v">' + esc(C.bandLabel('q7', a.q7)) + '</span></div>' +
+      '<div class="sum"><span class="k">외화 비중(구간 근사)</span><span class="v">' + (fx === null ? '상담에서 확인(잘 모르겠다 포함)' : '약 ' + fx + '%') + '</span></div>';
+    C.QUESTIONS.slice(0, 5).forEach(function (qd) {
+      html += '<div class="sum"><span class="k">' + esc(qd.title.replace(/\n/g, ' ')) + '</span><span class="v">' + esc(C.ynLabel(a[qd.id])) + '</span></div>';
+    });
+    html += '</div>';
+
+    html += '<div class="sec"><p class="eyebrow">상담 기록</p>' +
+      '<label class="f">상담 방식</label>' + segHtml('s-ch', C.CHANNELS, st.channel) +
+      '<div id="when"></div>' +
+      '<label class="f">상담 상태</label>' + segHtml('s-st', C.STATUS, st.status) +
+      '<label class="f">관심도</label>' + segHtml('s-heat', C.HEAT, st.heat) +
+      '<label class="f">다음 할 일</label>' + segHtml('s-next', C.NEXT, st.next) +
+      '<label class="f" for="r-cns">상담자</label><input type="text" id="r-cns" value="' + esc(bk.counselor || counselor()) + '">' +
+      '<label class="f" for="r-memo">메모</label><textarea id="r-memo" rows="2">' + esc(bk.memo || '') + '</textarea>' +
+      '<div class="row"><button class="btn o" id="b-cancel">← 목록</button><button class="btn y" id="b-save">저장</button></div>' +
+      '<div id="after" class="hidden">' +
+        '<p class="eyebrow" style="margin-top:14px">예약 확인 — 참가자에게</p>' +
+        '<div class="row"><button class="btn p" id="b-card">예약 카드 QR 보이기</button><a class="btn o" id="b-sms">문자로 보내기</a></div>' +
+        '<div class="row"><button class="btn o" id="b-share2">공유(카톡 등)</button></div>' +
+        '<div id="cardbox"></div>' +
+      '</div>' +
+      '<div class="row"><button class="btn ghost" id="b-store">store-app 반입용 복사</button><button class="btn ghost" id="b-at">AssetTect 가져오기 파일(이 건만)</button></div>' +
+      noticeHtml(true) + '</div>';
+    render(html);
+
+    function drawWhen() {
+      var w = $('when');
+      if (st.channel === 'now') {
+        w.innerHTML = '<label class="f" for="r-date">현장 브리핑 날짜</label><input type="date" id="r-date" value="' + esc(st.date) + '"><div class="slots" id="slots"></div>';
+        $('r-date').addEventListener('change', function () { st.date = this.value || ymd(); drawSlots(); });
+        drawSlots();
+      } else if (st.channel) {
+        w.innerHTML = '<label class="f" for="r-date">학회 후 일정 (미정이면 비워 두세요)</label><input type="date" id="r-date" value="' + esc(st.date) + '"><input type="time" id="r-time" style="margin-top:6px" value="' + esc(st.time) + '">';
+        $('r-date').addEventListener('change', function () { st.date = this.value; });
+        $('r-time').addEventListener('change', function () { st.time = this.value; });
+      } else w.innerHTML = '';
+    }
+    function drawSlots() {
+      var cns = $('r-cns').value.trim(), taken = {};
+      records().forEach(function (r) { if (r.phone !== rec.phone && r.booking && r.booking.channel === 'now' && r.booking.at && r.booking.at.slice(0, 10) === st.date && (r.booking.counselor || '') === cns) taken[r.booking.at.slice(11, 16)] = 1; });
+      var h = '';
+      for (var m = SLOT.start; m < SLOT.end; m += SLOT.step) {
+        var t = slotLabel(m);
+        h += '<button class="slot' + (st.slot === t ? ' sel' : '') + (taken[t] ? ' taken' : '') + '" data-t="' + t + '"' + (taken[t] ? ' disabled' : '') + '>' + t + '</button>';
+      }
+      $('slots').innerHTML = h;
+      Array.prototype.forEach.call($('slots').children, function (b) {
+        b.onclick = function () { st.slot = (st.slot === b.getAttribute('data-t')) ? null : b.getAttribute('data-t'); if (st.slot) setStatus('예약확정'); drawSlots(); };
+      });
+    }
+    function setStatus(v) { st.status = v; Array.prototype.forEach.call($('s-st').children, function (x) { x.classList.toggle('sel', x.getAttribute('data-v') === v); }); }
+    segBind('s-ch', function (v) { st.channel = v; st.slot = null; drawWhen(); });
+    segBind('s-st', function (v) { st.status = v || '스캔완료'; });
+    segBind('s-heat', function (v) { st.heat = v; });
+    segBind('s-next', function (v) { st.next = v; });
+    $('r-cns').addEventListener('input', function () { if (st.channel === 'now') drawSlots(); });
+    drawWhen();
+    if (bk.status) showAfter();
+
+    /* 저장 뒤에만 예약 확인 수단이 열린다 — 카드는 저장된 기록에서만 만든다. */
+    function showAfter() {
+      var b = { name: rec.name, channel: rec.booking.channel, at: rec.booking.at, counselor: rec.booking.counselor, topics: ax, q9: a.q9 };
+      var payload;
+      try { payload = C.encodeBooking(b); } catch (e) { return; }
+      var url = baseUrl() + '?b=' + payload;
+      var text = bookingText(b) + ' 예약 카드: ' + url;
+      $('after').classList.remove('hidden');
+      $('b-card').onclick = function () {
+        var svg = QR.svg(url, { label: '예약 카드 QR', size: 260 });
+        $('cardbox').innerHTML = (svg ? '<div class="qrbox">' + svg + '</div>' : '<p class="err">QR을 그릴 수 없습니다.</p>') + '<p class="hint" style="text-align:center">참가자가 폰 카메라로 찍으면 예약 카드와 캘린더 파일을 받습니다.</p>';
+      };
+      var ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+      $('b-sms').href = 'sms:' + rec.phone + (ios ? '&' : '?') + 'body=' + encodeURIComponent(text);
+      $('b-share2').onclick = function () {
+        if (navigator.share) navigator.share({ title: 'AssetTect 상담 예약 확인', text: text }).catch(function () {});
+        else copyText(text, '예약 확인 문구를 복사했습니다.');
+      };
+    }
+
+    $('b-cancel').onclick = function () { consultHome(); };
+    $('b-save').onclick = function () {
+      var cns = $('r-cns').value.trim();
+      try { localStorage.setItem(CNS_KEY, cns); } catch (e) {}
+      var at = st.channel === 'now' ? (st.slot ? st.date + 'T' + st.slot : '') : (st.date && st.time ? st.date + 'T' + st.time : '');
+      if (at && st.status === '스캔완료') st.status = '예약확정';
+      rec.booking = { channel: st.channel || '', at: at, status: st.status, heat: st.heat || '', next: st.next || '', counselor: cns, memo: $('r-memo').value.trim(), savedAt: new Date().toISOString() };
+      upsert(rec);
+      toast(at ? at.replace('T', ' ') + ' ' + C.channelLabel(st.channel) + ' — 저장했습니다. 예약 확인을 건네세요.' : '저장했습니다.');
+      showAfter();
+      $('after').scrollIntoView({ block: 'center' });
+    };
+    $('b-store').onclick = function () { copyText(JSON.stringify(C.storePayload(rec, S.event)), 'store-app 「받은 답변 붙여넣기」 칸에 붙이세요.'); };
+    $('b-at').onclick = function () { download('assettect-booth-' + (rec.name || rec.phone) + '.json', JSON.stringify(C.assettectExport([rec], S.event), null, 1)); toast('AssetTect 콘솔 「가져오기 (JSON)」로 여세요.'); };
+  }
+
+  function exportBooth() {
+    var out = { source: 'booth', event: S.event, exportedAt: new Date().toISOString(), device: deviceId(), counselor: counselor(), consentVersion: 'booth-consent-v1',
+                stats: allStats(), summary: C.summarize(records(), allStats()), records: records() };
+    var json = JSON.stringify(out, null, 1);
+    download('booth-' + (S.event || 'records') + '-' + ymd() + '-' + deviceId() + '.json', json);
+    copyText(json, '파일로 내려받고 클립보드에도 복사했습니다 — 두 곳에 보관하세요.');
+  }
+  function exportAssetTect() {
+    download('assettect-booth-' + (S.event || 'records') + '-' + ymd() + '.json', JSON.stringify(C.assettectExport(records(), S.event), null, 1));
+    toast('AssetTect 콘솔의 고객 설문 → 저장 목록 → 「가져오기 (JSON)」로 여세요.');
+  }
+  function wipe() {
+    if (!confirm('이 기기의 응답 ' + records().length + '건을 지웁니다. 내보내기를 먼저 했습니까?')) return;
+    try { localStorage.removeItem(REC_KEY); localStorage.removeItem(IMP_KEY); } catch (e) {}
+    consultHome('지웠습니다.');
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 부팅 — 갈래는 넷. ?r= 은 복호 직후 주소에서 지운다(히스토리·주소창에 페이로드를 남기지 않는다). ?b= 도 같다.
+  // ═══════════════════════════════════════════════════════════════════════════
+  (function boot() {
+    var r = param('r'), b = param('b');
+    var tail = S.event ? '&e=' + encodeURIComponent(S.event) : '';
+    if (r !== null) {
+      var rec = C.decode(r);
+      try { history.replaceState({}, '', location.pathname + '?c=1' + tail); } catch (e) {}
+      if (!rec) { consultHome('읽을 수 없는 코드입니다.'); return; }
+      openRecord(rec, true);
+      return;
+    }
+    if (b !== null) {
+      var bk = C.decodeBooking(b);
+      try { history.replaceState({}, '', location.pathname + (S.event ? '?e=' + encodeURIComponent(S.event) : '')); } catch (e) {}
+      if (!bk) { intro(); toast('읽을 수 없는 예약 카드입니다.'); return; }
+      bookingCard(bk);
+      return;
+    }
+    if (param('c') !== null) { consultHome(); return; }
+    intro();
+  })();
+})();
+</script>
+</body>
+</html>
