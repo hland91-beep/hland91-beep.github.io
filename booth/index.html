@@ -146,7 +146,8 @@
     { id: 'q7', type: 'band', bands: B_FX,  title: '해외·외화표시 금융자산을\n모두 합하면 얼마쯤인가요?', lead: '해외 주식·ETF, 외화예금, 해외 보험 잔액을 포함해서 봅니다.' },
     { id: 'q8', type: 'multi', opts: FXTYPES, none: '없다', title: '관심 있는 해외 자산 유형을\n모두 골라 주세요.', lead: '보유 여부와 무관하게, 알아보고 싶은 유형이면 됩니다.' },
     { id: 'q9', type: 'pick', title: '상담에서 가장 먼저\n확인하고 싶은 것은 무엇인가요?',
-      opts: [['상속세 규모와 재원', 'D'], ['통화·국가 분산 점검', 'C'], ['자녀 교육·해외 거주 대비', 'A'], ['보유 해외자산 점검·신고 의무', 'C']] },
+      opts: [['상속세 규모와 재원', 'D'], ['통화·국가 분산 점검', 'C'], ['자녀 교육·해외 거주 대비', 'A'], ['보유 해외자산 점검·신고 의무', 'C'],
+             ['해외 계좌 개설 절차·준비', 'C']] },   // 5번째 — 학회방 피드백(2026-09-21 「계좌개설 키워드」). 번호 0~3 은 그대로
     { id: 'q10', type: 'pick', title: '상담은 어떤 방식이 편하신가요?',
       opts: [['오늘 부스에서 10분', 'now'], ['학회 후 전화', 'call'], ['학회 후 화상', 'video'], ['학회 후 대면', 'meet']] }
   ];
@@ -158,7 +159,8 @@
     '상속세는 상담에서 유산 규모 → 공제 → 재원 순으로 확정합니다.',
     '통화·국가 분산은 상담에서 금융자산 전체 축으로 정밀 점검합니다.',
     '자녀 교육·해외 거주는 상담에서 시기와 기간을 연도로 놓고 확인합니다.',
-    '보유 해외자산의 신고 의무와 과세는 상담에서 함께 확인합니다.'
+    '보유 해외자산의 신고 의무와 과세는 상담에서 함께 확인합니다.',
+    '해외 계좌 개설은 상담에서 목적·거주지·개설 후 신고 의무 순으로 확인합니다.'
   ];
   /* 상담 주제 카드 문장 — 사실 예고까지만. 「~형」 판정어·권유 문장을 쓰지 않는다. */
   var AXIS_TEXT = {
@@ -258,7 +260,7 @@
     });
     if (!(a.q8 >= 0 && a.q8 <= 15)) throw new Error('q8 누락');
     q += a.q8.toString(16);
-    if (!(a.q9 >= 0 && a.q9 <= 3)) throw new Error('q9 누락');
+    if (!(a.q9 >= 0 && a.q9 <= 4)) throw new Error('q9 누락');
     if (!(a.q10 >= 0 && a.q10 <= 3)) throw new Error('q10 누락');
     var phone = cleanPhone(rec.phone);
     if (phone.length < 9) throw new Error('전화 9자리 미만');
@@ -272,7 +274,7 @@
     var p = unpack(input, 'r', 11);
     if (!p || p[0] !== VER) return null;
     var phone = p[3], q = p[4], q9 = p[5], q10 = p[6], c = p[7], dur = p[8], ts = parseInt(p[9], 36);
-    if (!/^[0-9]{9,11}$/.test(phone) || !/^[0-9]{7}[0-9a-f]$/.test(q) || !/^[0-3]$/.test(q9) || !/^[0-3]$/.test(q10) || !/^[01]$/.test(c) || !/^[0-9a-z]{1,3}$/.test(dur) || !(ts > 0)) return null;
+    if (!/^[0-9]{9,11}$/.test(phone) || !/^[0-9]{7}[0-9a-f]$/.test(q) || !/^[0-4]$/.test(q9) || !/^[0-3]$/.test(q10) || !/^[01]$/.test(c) || !/^[0-9a-z]{1,3}$/.test(dur) || !(ts > 0)) return null;
     var a = {};
     for (var i = 0; i < 5; i++) { var v = +q[i]; if (v > 2) return null; a['q' + (i + 1)] = v; }
     for (var j = 5; j < 7; j++) {
@@ -294,7 +296,7 @@
     if (at && !/^[0-9]{12}$/.test(at)) throw new Error('일시 형식');
     var topics = String(b.topics || '').replace(/[^ABCD]/g, '').slice(0, 2);
     if (topics.length !== 2) throw new Error('주제 축 2자');
-    if (!(b.q9 >= 0 && b.q9 <= 3)) throw new Error('q9');
+    if (!(b.q9 >= 0 && b.q9 <= 4)) throw new Error('q9');
     return pack(['b1', cleanText(b.name, NAME_MAX), ch, at, cleanText(b.counselor, NAME_MAX), topics, b.q9]);
   }
   function decodeBooking(input) {
@@ -302,7 +304,7 @@
     if (!p || p[0] !== 'b1') return null;
     var channel = null;
     CHANNELS.forEach(function (c) { if (c[2] === p[2]) channel = c[1]; });
-    if (!channel || !/^([0-9]{12})?$/.test(p[3]) || !/^[ABCD]{2}$/.test(p[5]) || !/^[0-3]$/.test(p[6])) return null;
+    if (!channel || !/^([0-9]{12})?$/.test(p[3]) || !/^[ABCD]{2}$/.test(p[5]) || !/^[0-4]$/.test(p[6])) return null;
     var at = p[3] ? p[3].slice(0, 4) + '-' + p[3].slice(4, 6) + '-' + p[3].slice(6, 8) + 'T' + p[3].slice(8, 10) + ':' + p[3].slice(10, 12) : '';
     return { name: p[1], channel: channel, at: at, counselor: p[4], topics: [p[5][0], p[5][1]], q9: +p[6] };
   }
