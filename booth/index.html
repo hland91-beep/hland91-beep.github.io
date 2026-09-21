@@ -4,9 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
 <meta name="color-scheme" content="light dark">
-<title>AssetTect 글로벌 자산·보장 1분 점검</title>
+<title>Brilliance Tool 글로벌 자산·보장 1분 점검</title>
 <!--
-  학회 부스용 1분 설문 · 응답 QR · 상담자 화면 — 단일 파일, 외부 참조 0, **서버 0** (A안 확정 2026-09-21)
+  Brilliance Tool — 학회 부스용 1분 설문 · 응답 QR · 상담자 화면 — 단일 파일, 외부 참조 0, **서버 0** (A안 확정 2026-09-21)
+  브랜드: 참가자·상담자 화면은 「Brilliance Tool」(주관 Brilliance Korea, brilliancekorea.com — 2026-09-21 사용자 결정).
+        「AssetTect」는 이 파일에서 Expert 계층 콘솔 소프트웨어의 이름과 그 가져오기 계약(assettect_*) 식별자로만 남는다.
   데이터는 QR · 파일 · 기기 안에서만 움직인다. 서버가 하던 일의 서버 없는 대응은 이렇다:
     응답 전달   → 응답 QR 이 답 자체를 싣는다(검사 마디로 절단·변조 차단)
     예약 확인   → 상담자 태블릿이 「예약 카드 QR」(?b=)을 보여 주고, 참가자 폰이 그것을 찍어 카드·캘린더 파일을 받는다
@@ -105,7 +107,7 @@
 </style>
 </head>
 <body>
-<header><h1 id="hd">AssetTect 글로벌 자산·보장 1분 점검</h1><div class="prog" id="prog" hidden><i id="progi" style="width:0"></i></div></header>
+<header><h1 id="hd">Brilliance Tool 글로벌 자산·보장 1분 점검</h1><div class="prog" id="prog" hidden><i id="progi" style="width:0"></i></div></header>
 <div class="wrap" id="app"></div>
 <div class="toast" id="toast"></div>
 
@@ -907,6 +909,7 @@
   var PUBLIC_BASE = 'https://hland91-beep.github.io/booth/';
   var DEEP_SURVEY = 'https://hland91-beep.github.io/ddlife/?g=1';   // 원장셈 「자산의 국경」 5분 문진 직행
   var EVENTS = { ps2026: '2026 성형외과학회 · 파르나스호텔' };            // 행사코드 → 화면 표기. 일자는 확정되면 여기에
+  var ORG = { name: 'Brilliance Korea', host: 'brilliancekorea.com', url: 'https://brilliancekorea.com' };   // 주관사 · 개인정보 수집 주체 (브랜드 Brilliance Tool)
   var SLOT = { start: 10 * 60, end: 17 * 60, step: 10 };               // 현장 브리핑 슬롯(분) — 행사마다 여기만 고친다
   var DRAFT_TTL = 3 * 60 * 1000;                                       // 공용 기기 잔존 방지: 3분 지난 초안은 버린다
   var REC_KEY = 'booth.records', CNS_KEY = 'booth.counselor', DRAFT_KEY = 'booth.draft', STAT_KEY = 'booth.stats', DEV_KEY = 'booth.device', IMP_KEY = 'booth.importedStats';
@@ -984,7 +987,7 @@
   }
 
   function intro() {
-    setProg(null); $('hd').textContent = 'AssetTect 글로벌 자산·보장 1분 점검';
+    setProg(null); $('hd').textContent = 'Brilliance Tool 글로벌 자산·보장 1분 점검';
     var draft = loadDraft();
     render(
       '<div class="sec">' +
@@ -994,6 +997,7 @@
         '<button class="btn p" id="b-start">1분 점검 시작</button>' +
         (draft ? '<button class="btn ghost" id="b-resume">조금 전 답하던 곳에서 이어가기</button>' : '') +
         noticeHtml(true) +
+        '<p class="hint" style="margin-top:10px">주관 ' + ORG.name + ' · <a class="tel" href="' + ORG.url + '" target="_blank" rel="noopener">' + ORG.host + '</a></p>' +
       '</div>');
     $('b-start').onclick = function () { S.a = {}; S.startedAt = Date.now(); try { sessionStorage.removeItem(DRAFT_KEY); } catch (e) {} bump('started'); question(0); };
     if (draft) $('b-resume').onclick = function () { S.a = draft.a; S.startedAt = draft.startedAt || Date.now(); var i = 0; while (i < C.QUESTIONS.length && S.a[C.QUESTIONS[i].id] !== undefined) i++; if (i >= C.QUESTIONS.length) result(); else question(i); };
@@ -1068,7 +1072,7 @@
         '<label class="f" for="f-name">성함</label><input type="text" id="f-name" maxlength="' + C.NAME_MAX + '" placeholder="예: 홍길동" value="' + esc(S.name) + '">' +
         '<label class="f" for="f-hosp">병(의)원명 · 소속</label><input type="text" id="f-hosp" maxlength="' + C.HOSP_MAX + '" placeholder="예: ○○성형외과의원" value="' + esc(S.hospital) + '"><p class="hint">' + C.HOSP_MAX + '자까지 QR에 실립니다.</p>' +
         '<label class="f" for="f-phone">휴대전화</label><input type="tel" id="f-phone" inputmode="numeric" placeholder="예: 010-1234-5678" value="' + esc(fmtPhone(S.phone)) + '">' +
-        '<label class="consent"><input type="checkbox" id="f-c1"' + (S.consent1 ? ' checked' : '') + '><span><b>[필수] 개인정보 수집·이용</b> — 항목: 성함·병(의)원명·휴대전화번호 / 목적: 점검 결과 제공, 상담 예약, 본인 확인 / 보유: 학회 종료 후 6개월, 상담이 진행되면 상담 기록으로 이관. 동의하지 않으셔도 점검 결과는 보실 수 있으나 상담 예약은 진행되지 않습니다.</span></label>' +
+        '<label class="consent"><input type="checkbox" id="f-c1"' + (S.consent1 ? ' checked' : '') + '><span><b>[필수] 개인정보 수집·이용</b> — 주체: ' + ORG.name + ' / 항목: 성함·병(의)원명·휴대전화번호 / 목적: 점검 결과 제공, 상담 예약, 본인 확인 / 보유: 학회 종료 후 6개월, 상담이 진행되면 상담 기록으로 이관. 동의하지 않으셔도 점검 결과는 보실 수 있으나 상담 예약은 진행되지 않습니다.</span></label>' +
         '<label class="consent"><input type="checkbox" id="f-c2"' + (S.consent2 ? ' checked' : '') + '><span><b>[필수] 상담 예약 연락</b> — 예약 확인과 일정 조율을 위해 휴대전화로 연락합니다.</span></label>' +
         '<label class="consent" style="background:transparent;border:1px dashed var(--line)"><input type="checkbox" id="f-c3"' + (S.marketing ? ' checked' : '') + '><span><b>[선택] 마케팅 정보 수신</b> — 향후 세미나·리포트·콘텐츠 안내. 동의하지 않아도 상담 예약에는 영향이 없습니다.</span></label>' +
         '<p class="hint">수집하지 않는 것: 주민등록번호·계좌번호·여권번호·상세 투자내역·건강정보. 동의 문안 booth-consent-v1.</p>' +
@@ -1123,7 +1127,7 @@
         noticeHtml() + '</div>');
     $('b-copy').onclick = function () { copyText(q.url, '링크를 복사했습니다.'); };
     $('b-share').onclick = function () {
-      if (navigator.share) navigator.share({ title: 'AssetTect 1분 점검 — 응답', text: q.url }).catch(function () {});
+      if (navigator.share) navigator.share({ title: 'Brilliance Tool 1분 점검 — 응답', text: q.url }).catch(function () {});
       else copyText(q.url, '복사했습니다. 상담사에게 전달해 주세요.');
     };
     $('b-home').onclick = resetAll;
@@ -1134,7 +1138,7 @@
   // ═══════════════════════════════════════════════════════════════════════════
   function bookingText(b) {
     var when = b.at ? b.at.replace('T', ' ') : (b.channel === 'now' ? '오늘 부스에서' : '학회 후 일정 조율');
-    return '[AssetTect] ' + (b.name ? b.name + ' 원장님, ' : '') + '상담 예약이 접수되었습니다. 주제: ' + C.AXES[b.topics[0]] + ' · 방식: ' + C.channelLabel(b.channel) + ' · 일시: ' + when + (b.counselor ? ' · 담당: ' + b.counselor : '') + '.';
+    return '[Brilliance Tool] ' + (b.name ? b.name + ' 원장님, ' : '') + '상담 예약이 접수되었습니다. 주제: ' + C.AXES[b.topics[0]] + ' · 방식: ' + C.channelLabel(b.channel) + ' · 일시: ' + when + (b.counselor ? ' · 담당: ' + b.counselor : '') + '.';
   }
   function icsFor(b) {
     if (!b.at) return null;
@@ -1143,14 +1147,14 @@
     d.setMinutes(d.getMinutes() + (b.channel === 'now' ? 10 : 30));
     var en = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + 'T' + pad(d.getHours()) + pad(d.getMinutes()) + '00';
     var now = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
-    return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//AssetTect//booth//KO', 'BEGIN:VEVENT', 'UID:booth-' + st + '@assettect', 'DTSTAMP:' + now, 'DTSTART:' + st, 'DTEND:' + en,
-            'SUMMARY:AssetTect 상담 — ' + C.AXES[b.topics[0]], 'DESCRIPTION:' + C.channelLabel(b.channel) + (b.counselor ? ' / 담당 ' + b.counselor : '') + ' / 준비: ' + C.PREP.join(', '), 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Brilliance Tool//booth//KO', 'BEGIN:VEVENT', 'UID:booth-' + st + '@brilliancetool', 'DTSTAMP:' + now, 'DTSTART:' + st, 'DTEND:' + en,
+            'SUMMARY:Brilliance Tool 상담 — ' + C.AXES[b.topics[0]], 'DESCRIPTION:' + C.channelLabel(b.channel) + (b.counselor ? ' / 담당 ' + b.counselor : '') + ' / 준비: ' + C.PREP.join(', '), 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
   }
   function bookingCard(b) {
     setProg(null); $('hd').textContent = '예약 확인';
     var when = b.at ? b.at.replace('T', ' ') : (b.channel === 'now' ? '오늘 부스에서' : '학회 후 일정 조율 (담당자가 연락드립니다)');
     render(
-      '<div class="sec"><p class="eyebrow">' + esc(EVENTS[S.event] || '학회 부스') + '</p>' +
+      '<div class="sec"><p class="eyebrow">Brilliance Tool · ' + esc(EVENTS[S.event] || '학회 부스') + '</p>' +
         '<h2>' + esc(b.name ? b.name + ' 원장님, ' : '') + '예약이 접수되었습니다.</h2>' +
         '<div class="sum"><span class="k">상담 주제</span><span class="v">' + esc(C.AXES[b.topics[0]]) + ' <span class="hint" style="display:inline">(함께: ' + esc(C.AXES[b.topics[1]]) + ')</span></span></div>' +
         '<div class="sum"><span class="k">예약 방식</span><span class="v">' + esc(C.channelLabel(b.channel)) + '</span></div>' +
@@ -1161,12 +1165,12 @@
         '<button class="btn ghost" id="b-home" style="margin-top:12px">처음으로</button>' +
         noticeHtml(true) + '</div>');
     if (b.at) {
-      $('b-ics').onclick = function () { download('assettect-booking.ics', icsFor(b), 'text/calendar'); };
+      $('b-ics').onclick = function () { download('brilliance-tool-booking.ics', icsFor(b), 'text/calendar'); };
       var st = b.at.replace(/[-:]/g, '') + '00';
       var d = new Date(b.at.slice(0, 4), +b.at.slice(5, 7) - 1, +b.at.slice(8, 10), +b.at.slice(11, 13), +b.at.slice(14, 16));
       d.setMinutes(d.getMinutes() + (b.channel === 'now' ? 10 : 30));
       var en = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + 'T' + pad(d.getHours()) + pad(d.getMinutes()) + '00';
-      $('b-gcal').href = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent('AssetTect 상담 — ' + C.AXES[b.topics[0]]) + '&dates=' + st + '/' + en + '&details=' + encodeURIComponent(C.channelLabel(b.channel) + ' / 준비: ' + C.PREP.join(', '));
+      $('b-gcal').href = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent('Brilliance Tool 상담 — ' + C.AXES[b.topics[0]]) + '&dates=' + st + '/' + en + '&details=' + encodeURIComponent(C.channelLabel(b.channel) + ' / 준비: ' + C.PREP.join(', '));
     }
     $('b-home').onclick = function () { try { history.replaceState({}, '', location.pathname + (S.event ? '?e=' + encodeURIComponent(S.event) : '')); } catch (e) {} intro(); };
   }
@@ -1400,7 +1404,7 @@
       var ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
       $('b-sms').href = 'sms:' + rec.phone + (ios ? '&' : '?') + 'body=' + encodeURIComponent(text);
       $('b-share2').onclick = function () {
-        if (navigator.share) navigator.share({ title: 'AssetTect 상담 예약 확인', text: text }).catch(function () {});
+        if (navigator.share) navigator.share({ title: 'Brilliance Tool 상담 예약 확인', text: text }).catch(function () {});
         else copyText(text, '예약 확인 문구를 복사했습니다.');
       };
     }
