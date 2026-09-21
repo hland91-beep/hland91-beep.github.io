@@ -1226,6 +1226,7 @@
     var list = records().sort(function (x, y) { return (y.scannedAt || 0) - (x.scannedAt || 0); });
     var html = '<div class="sec"><p class="eyebrow">상담자 · ' + esc(EVENTS[S.event] || '부스') + '</p>' +
       '<label class="f" for="c-name">상담자 이름</label><input type="text" id="c-name" value="' + esc(counselor()) + '" placeholder="예: 홍길동">' +
+      (counselor() ? '' : '<p class="hint">이름을 먼저 적어 두세요 — 저장할 때 필요합니다(슬롯·집계가 이름으로 묶입니다).</p>') +
       '<div class="row"><button class="btn p" id="b-scan">QR 스캔</button></div>' +
       '<p class="hint">화면 안 스캔은 안드로이드 Chrome 에서 동작합니다. 안 되면 카메라 앱으로 QR을 찍어 열어 주세요.</p>' +
       '<div id="scanbox"></div>' +
@@ -1418,6 +1419,8 @@
     $('b-cancel').onclick = function () { consultHome(); };
     $('b-save').onclick = function () {
       var cns = $('r-cns').value.trim();
+      /* 이름 없는 저장은 막는다 — 슬롯 충돌 검사와 집계 「상담자별」이 이름으로 묶인다(QA 2026-09-21 #2). */
+      if (!cns) { toast('상담자 이름을 먼저 적어 주세요 — 슬롯과 집계가 이름으로 묶입니다.'); $('r-cns').focus(); $('r-cns').scrollIntoView({ block: 'center' }); return; }
       try { localStorage.setItem(CNS_KEY, cns); } catch (e) {}
       var at = st.channel === 'now' ? (st.slot ? st.date + 'T' + st.slot : '') : (st.date && st.time ? st.date + 'T' + st.time : '');
       if (at && st.status === '스캔완료') st.status = '예약확정';
