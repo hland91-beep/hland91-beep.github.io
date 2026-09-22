@@ -135,7 +135,8 @@
         <div class="q-hint">진단에 쓰는 사고 통계가 진료과별로 다릅니다. 확실하지 않으면 «기타·잘 모르겠음»을 눌러주세요 — 상담 때 함께 확인합니다.</div>
         <div class="opts" data-id="md-specialty">
           <button type="button" class="opt" data-v="dental"  onclick="pickChoice(this)">치과</button>
-          <button type="button" class="opt" data-v="medical" onclick="pickChoice(this)">의과 (치과 외)</button>
+          <button type="button" class="opt" data-v="plastic" onclick="pickChoice(this)">성형외과</button>
+          <button type="button" class="opt" data-v="medical" onclick="pickChoice(this)">의과 (치과·성형외과 외)</button>
           <button type="button" class="opt" data-v="other"   onclick="pickChoice(this)">기타·잘 모르겠음</button>
         </div>
         <div class="q-hint" id="sp-prefill-note" style="display:none;color:var(--p-d);font-weight:600">상담사가 미리 골라 두었습니다 — 다르면 바꿔 주세요.</div>
@@ -302,7 +303,9 @@ STEPS.forEach(function(st){ st.qs.forEach(function(q){
 /* 진료과는 단계 0(기본 정보)의 수기 마크업이라 위 렌더 루프가 못 줍는다 — 확인 단계 요약에서
    코드가 아니라 라벨로 보이게 하려면 여기서 직접 등록해야 한다.
    ⚠️ 'other' 는 상담사 앱 드롭다운에 없는 값이다. 일부러 그렇다(fail-closed 계약). */
-var C_SPECIALTY = [['치과','dental'],['의과 (치과 외)','medical'],['기타·잘 모르겠음','other']];
+/* 성형외과(plastic)는 2026-09-22 추가 — 상담사 앱 레지스트리(MED_LAWS.specialties.plastic · 중재원 통계연보 2024)와 같은 코드.
+   의과는 「치과·성형외과 외」로 좁혀 두 선택지가 겹치지 않게 한다. */
+var C_SPECIALTY = [['치과','dental'],['성형외과','plastic'],['의과 (치과·성형외과 외)','medical'],['기타·잘 모르겠음','other']];
 CHOICEMAP['md-specialty'] = C_SPECIALTY;
 
 // 값 표시 포맷 — 만원 값을 억/만원 한글로
@@ -626,7 +629,7 @@ document.getElementById('f-phone').addEventListener('input', function(){
   saveDraft();
 });
 
-/* ?sp=dental|medical — 상담사가 이미 아는 진료과를 미리 눌러 둔다.
+/* ?sp=dental|medical|plastic — 상담사가 이미 아는 진료과를 미리 눌러 둔다.
    🚨 **미리 고르기만 하고 숨기지 않는다.** 감추고 건너뛰면 「상담사의 짐작」이 「원장의 답」으로
       둔갑하는데, 그것이 바로 이번에 고치는 결함(조용한 치과 폴백)과 같은 형태다.
       그래서 버튼은 그대로 보이고, 미리 골랐다는 사실을 화면에 적는다.
