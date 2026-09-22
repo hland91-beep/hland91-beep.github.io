@@ -147,7 +147,7 @@
     { id: 'q8', type: 'multi', opts: FXTYPES, none: '없다', title: '관심 있는 해외 자산 유형을\n모두 골라 주세요.', lead: '보유 여부와 무관하게, 알아보고 싶은 유형이면 됩니다.' },
     { id: 'q9', type: 'pick', title: '상담에서 가장 먼저\n확인하고 싶은 것은 무엇인가요?',
       opts: [['상속세 규모와 재원', 'D'], ['통화·국가 분산 점검', 'C'], ['자녀 교육·해외 거주 대비', 'A'], ['보유 해외자산 점검·신고 의무', 'C'],
-             ['해외 계좌 개설 절차·준비', 'C']] },   // 5번째 — 학회방 피드백(2026-09-21 「계좌개설 키워드」). 번호 0~3 은 그대로
+             ['해외 계좌 개설·금융투어(홍콩·싱가포르·미국)', 'C']] },   // 5번째 — 학회방 피드백(2026-09-21 「계좌개설 키워드」) → 학회에 신고한 홍보 품목대로 금융투어 병기(사용자 결정 2026-09-22). 번호 0~3·VER 그대로
     { id: 'q10', type: 'pick', title: '상담은 어떤 방식이 편하신가요?',
       opts: [['오늘 부스에서 10분', 'now'], ['학회 후 전화', 'call'], ['학회 후 화상', 'video'], ['학회 후 대면', 'meet']] }
   ];
@@ -160,7 +160,7 @@
     '통화·국가 분산은 상담에서 금융자산 전체 축으로 정밀 점검합니다.',
     '자녀 교육·해외 거주는 상담에서 시기와 기간을 연도로 놓고 확인합니다.',
     '보유 해외자산의 신고 의무와 과세는 상담에서 함께 확인합니다.',
-    '해외 계좌 개설은 상담에서 목적·거주지·개설 후 신고 의무 순으로 확인합니다.'
+    '해외 계좌 개설은 상담에서 목적·거주지·개설 후 신고 의무 순으로 확인하고, 금융투어(홍콩·싱가포르·미국) 일정도 그때 안내합니다.'
   ];
   /* 상담 주제 카드 문장 — 사실 예고까지만. 「~형」 판정어·권유 문장을 쓰지 않는다. */
   var AXIS_TEXT = {
@@ -955,9 +955,14 @@
      QR 에는 공개 주소를 싣는다(상담자 기기의 카메라 앱이 여는 주소이므로). */
   var PUBLIC_BASE = 'https://hland91-beep.github.io/booth/';
   var DEEP_SURVEY = 'https://hland91-beep.github.io/ddlife/?g=1';   // 원장셈 「자산의 국경」 5분 문진 직행
-  var EVENTS = { ps2026: '2026 성형외과학회 · 파르나스호텔' };            // 행사코드 → 화면 표기. 일자는 확정되면 여기에
+  /* 행사코드 → 행사명·일자·장소·부스 위치. 학회 후원 신청 확인분(2026-09-22): Start-Up 부스 58번(2F Start-Up Zone).
+     배치도는 「학회 운영 사정에 따라 일부 변경될 수 있다」 — 바뀌면 where 만 고친다. 전시 운영시간 10:00~17:00(사용자 확정 2026-09-22) = SLOT. */
+  var EVENTS = { ps2026: { name: 'PRS KOREA 2026 (대한성형외과학회)', dates: '11.8(일)~10(화)', venue: '그랜드 인터컨티넨탈 서울 파르나스', where: '2F Start-Up Zone 58번 부스' } };
+  function evLabel(code) { var e = EVENTS[code]; return e ? e.name + ' · ' + e.dates + ' · ' + e.venue : ''; }
+  function evWhere(code) { var e = EVENTS[code]; return e ? e.where : ''; }
+  function evPlace(code) { var e = EVENTS[code]; return e ? e.venue + ' ' + e.where : ''; }   // 캘린더 LOCATION(현장 브리핑만)
   var ORG = { name: 'Brilliance Korea', host: 'brilliancekorea.com', url: 'https://brilliancekorea.com' };   // 주관사 · 개인정보 수집 주체 (브랜드 Brilliance Tool)
-  var SLOT = { start: 10 * 60, end: 17 * 60, step: 10 };               // 현장 브리핑 슬롯(분) — 행사마다 여기만 고친다
+  var SLOT = { start: 10 * 60, end: 17 * 60, step: 10 };               // 현장 브리핑 슬롯(분) = 전시 운영시간 10:00~17:00(PRS KOREA 2026 · 2026-09-22 확정) — 행사마다 여기만 고친다
   var DRAFT_TTL = 3 * 60 * 1000;                                       // 공용 기기 잔존 방지: 3분 지난 초안은 버린다
   var REC_KEY = 'booth.records', CNS_KEY = 'booth.counselor', DRAFT_KEY = 'booth.draft', STAT_KEY = 'booth.stats', DEV_KEY = 'booth.device', IMP_KEY = 'booth.importedStats';
 
@@ -1038,7 +1043,7 @@
     var draft = loadDraft();
     render(
       '<div class="sec">' +
-        '<p class="eyebrow">' + esc(EVENTS[S.event] || '학회 부스') + ' · 1분 점검</p>' +
+        '<p class="eyebrow">' + esc(evLabel(S.event) || '학회 부스') + ' · 1분 점검</p>' +
         '<h2>내 자산과 보장은 한 나라·한 통화에 집중되어 있지 않습니까?</h2>' +
         '<p class="lead">탭 10번, 약 60초. 대략적인 답이면 충분합니다. 점검 범위는 달러·해외자산·국제보장·자녀교육·해외체류·승계이고, 결과로 <b>먼저 이야기할 상담 주제</b>가 정리됩니다. 결과 화면의 QR을 부스 상담 담당자에게 보여 주시면 상담 일정을 바로 잡을 수 있습니다.</p>' +
         '<button class="btn p" id="b-start">1분 점검 시작</button>' +
@@ -1184,8 +1189,14 @@
   // ═══════════════════════════════════════════════════════════════════════════
   // 참가자 예약 확인 카드(?b=) — 상담자 태블릿의 예약 카드 QR 을 찍으면 이 화면. 서버 없는 QR-03.
   // ═══════════════════════════════════════════════════════════════════════════
+  /* 예약 일시 문구 — 현장 브리핑이면 부스 위치(EVENTS.where)를 붙인다: 참가자가 다시 찾아올 곳이다. */
+  function whenText(b, later) {
+    var at = b.channel === 'now' ? (evWhere(S.event) || '부스') : '';
+    if (b.at) return b.at.replace('T', ' ') + (at ? ' · ' + at : '');
+    return b.channel === 'now' ? '오늘 ' + at + '에서' : later;
+  }
   function bookingText(b) {
-    var when = b.at ? b.at.replace('T', ' ') : (b.channel === 'now' ? '오늘 부스에서' : '학회 후 일정 조율');
+    var when = whenText(b, '학회 후 일정 조율');
     return '[Brilliance Tool] ' + (b.name ? b.name + ' 원장님, ' : '') + '상담 예약이 접수되었습니다. 주제: ' + C.AXES[b.topics[0]] + ' · 방식: ' + C.channelLabel(b.channel) + ' · 일시: ' + when + (b.counselor ? ' · 담당: ' + b.counselor : '') + '.';
   }
   function icsFor(b) {
@@ -1196,13 +1207,14 @@
     var en = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + 'T' + pad(d.getHours()) + pad(d.getMinutes()) + '00';
     var now = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
     return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Brilliance Tool//booth//KO', 'BEGIN:VEVENT', 'UID:booth-' + st + '@brilliancetool', 'DTSTAMP:' + now, 'DTSTART:' + st, 'DTEND:' + en,
-            'SUMMARY:Brilliance Tool 상담 — ' + C.AXES[b.topics[0]], 'DESCRIPTION:' + C.channelLabel(b.channel) + (b.counselor ? ' / 담당 ' + b.counselor : '') + ' / 준비: ' + C.PREP.join(', '), 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+            'SUMMARY:Brilliance Tool 상담 — ' + C.AXES[b.topics[0]], 'DESCRIPTION:' + C.channelLabel(b.channel) + (b.counselor ? ' / 담당 ' + b.counselor : '') + ' / 준비: ' + C.PREP.join(', ')]
+            .concat(b.channel === 'now' && evPlace(S.event) ? ['LOCATION:' + evPlace(S.event)] : []).concat(['END:VEVENT', 'END:VCALENDAR']).join('\r\n');
   }
   function bookingCard(b) {
     setProg(null); $('hd').textContent = '예약 확인';
-    var when = b.at ? b.at.replace('T', ' ') : (b.channel === 'now' ? '오늘 부스에서' : '학회 후 일정 조율 (담당자가 연락드립니다)');
+    var when = whenText(b, '학회 후 일정 조율 (담당자가 연락드립니다)');
     render(
-      '<div class="sec"><p class="eyebrow">Brilliance Tool · ' + esc(EVENTS[S.event] || '학회 부스') + '</p>' +
+      '<div class="sec"><p class="eyebrow">Brilliance Tool · ' + esc(evLabel(S.event) || '학회 부스') + '</p>' +
         '<h2>' + esc(b.name ? b.name + ' 원장님, ' : '') + '예약이 접수되었습니다.</h2>' +
         '<div class="sum"><span class="k">상담 주제</span><span class="v">' + esc(C.AXES[b.topics[0]]) + ' <span class="hint" style="display:inline">(함께: ' + esc(C.AXES[b.topics[1]]) + ')</span></span></div>' +
         '<div class="sum"><span class="k">예약 방식</span><span class="v">' + esc(C.channelLabel(b.channel)) + '</span></div>' +
@@ -1218,7 +1230,7 @@
       var d = new Date(b.at.slice(0, 4), +b.at.slice(5, 7) - 1, +b.at.slice(8, 10), +b.at.slice(11, 13), +b.at.slice(14, 16));
       d.setMinutes(d.getMinutes() + (b.channel === 'now' ? 10 : 30));
       var en = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + 'T' + pad(d.getHours()) + pad(d.getMinutes()) + '00';
-      $('b-gcal').href = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent('Brilliance Tool 상담 — ' + C.AXES[b.topics[0]]) + '&dates=' + st + '/' + en + '&details=' + encodeURIComponent(C.channelLabel(b.channel) + ' / 준비: ' + C.PREP.join(', '));
+      $('b-gcal').href = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent('Brilliance Tool 상담 — ' + C.AXES[b.topics[0]]) + '&dates=' + st + '/' + en + '&details=' + encodeURIComponent(C.channelLabel(b.channel) + ' / 준비: ' + C.PREP.join(', ')) + (b.channel === 'now' && evPlace(S.event) ? '&location=' + encodeURIComponent(evPlace(S.event)) : '');
     }
     $('b-home').onclick = function () { try { history.replaceState({}, '', location.pathname + (S.event ? '?e=' + encodeURIComponent(S.event) : '')); } catch (e) {} intro(); };
   }
@@ -1266,7 +1278,7 @@
   function consultHome(msg) {
     setProg(null); $('hd').textContent = '상담자 화면';
     var list = records().sort(function (x, y) { return (y.scannedAt || 0) - (x.scannedAt || 0); });
-    var html = '<div class="sec"><p class="eyebrow">상담자 · ' + esc(EVENTS[S.event] || '부스') + '</p>' +
+    var html = '<div class="sec"><p class="eyebrow">상담자 · ' + esc(evLabel(S.event) || '부스') + '</p>' +
       '<label class="f" for="c-name">상담자 이름</label><input type="text" id="c-name" value="' + esc(counselor()) + '" placeholder="예: 홍길동">' +
       (counselor() ? '' : '<p class="hint">이름을 먼저 적어 두세요 — 저장할 때 필요합니다(슬롯·집계가 이름으로 묶입니다).</p>') +
       '<div class="row"><button class="btn p" id="b-scan">QR 스캔</button></div>' +
