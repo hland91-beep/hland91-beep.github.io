@@ -364,18 +364,57 @@
     return parts;
   }
 
-  /* ── store-app 반입용 payload — 「받은 답변 붙여넣기」 칸 계약 {name, phone, date, source, context, inputs}.
-     inputs 는 원장셈 문진과 같은 실물 id(a-other·a-forex, 백만원 = 억원×100). 「잘 모르겠다」는 키 제외. ── */
+  /* ── store-app 반입용 payload — 「받은 답변 붙여넣기」 계약(2026-09-22 Plan B Phase 1 · 결정 ①~③):
+       { source:'booth', survey:'booth-1min-v1', name, phone, date, context:{주의[],따로확인[],문진기록[]}, inputs:{…} }
+     · context 는 **키 객체**다 — store-app 「받은 내용」(openHandoffRemind)은 배열을 읽지 않는다. 주의 → ⚠️ 주의해서 볼 값 ·
+       따로확인 → 이어서 확인할 것 · 문진기록 → 문진 원문(label: value 줄). 종전 문자열 배열은 저장만 되고 화면에 안 보였다.
+     · inputs 는 base-store 의 **실물 id 만**(tests/booth.test.mjs 가 base-store.html 과 교차 확인):
+         a-other·a-forex(억원×100 백만원 · 잘 모르겠다는 키 제외 · 「없다」는 0)
+         client-name(성함 · 무명이면 「부스_YYYYMMDD_HHMM」 — 저장 키가 곧 이름이라 비우면 「설문_…」로 앉는다)
+         md-consult-topic(≤200 · 개원의 탭 「상담에서 꼭 다룰 것」 = 최우선 확인·상담 주제 축·관심 유형·희망 방식)
+         cr-memo(≤2000 · 상담 이력 「플래너 메모」 = 부스 응답 요약 + 예약)
+         cr-next-date(예약 일시가 있고 현장 10분이 아닐 때만 · YYYY-MM-DD — 상담 이력의 「다음 점검일」 · 마무리 때 새 점검일로 덮는다)
+     · md-* 키 하나로 개원의 탭 반입구가 fail-closed(진료과 미확인)·도장·칸 소거를 돌린다. 진료과(md-specialty)는 **보내지 않는다**
+       (결정 ① 「확인 필요」 — 성형외과 학회 참가자라도 진료과·개원 여부는 상담자가 확인한 뒤 고른다 · 자동 'medical' 금지).
+     · 판정 어휘 없음(테스트가 전 줄을 잰다) · 전화는 표기만(소비처 없음 — 문진기록 「휴대전화: 」로 남긴다 · 허위 기재 예방 안내와 짝). ── */
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function stamp(ts) { var d = new Date(ts); return d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '_' + pad2(d.getHours()) + pad2(d.getMinutes()); }
+  function ymdHm(ts) { var d = new Date(ts); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
+  function fmtPhone(p) { p = cleanPhone(p); return p.length === 11 ? p.slice(0, 3) + '-' + p.slice(3, 7) + '-' + p.slice(7) : p.length === 10 ? p.slice(0, 3) + '-' + p.slice(3, 6) + '-' + p.slice(6) : p; }
+  /* 개원의 탭 「상담에서 꼭 다룰 것」 한 줄(≤200) — 사실만: Q9 에코 · 주제 축 · 관심 유형 · 희망 방식 */
+  function topicLine(rec, event) {
+    var a = rec.a, ax = axes(a), types = fxTypeLabels(a.q8);
+    return ('최우선 확인: ' + pickLabel('q9', a.q9) + ' · 상담 주제: ' + ax.map(function (k) { return k + ' ' + AXES[k]; }).join(', ')
+      + (types.length ? ' · 관심 유형: ' + types.join(', ') : '') + ' · 희망 방식: ' + pickLabel('q10', a.q10) + (event ? ' (' + event + ' 부스)' : '')).slice(0, 200);
+  }
+  function bookingLine(b) {
+    if (!b || !(b.at || b.status)) return '';
+    return '부스 상담: ' + [b.status, channelLabel(b.channel), b.at ? b.at.replace('T', ' ') : '', b.counselor ? '상담자 ' + b.counselor : '', b.memo].filter(Boolean).join(' · ');
+  }
   function storePayload(rec, event) {
     var a = rec.a, inputs = {};
     var k = B_KRW[a.q6], f = B_FX[a.q7];
     if (k && k[1] !== null) inputs['a-other'] = Math.round(k[1] * 100);
     if (f && f[1] !== null) inputs['a-forex'] = Math.round(f[1] * 100);
-    var out = { source: 'booth', name: rec.name || '', phone: rec.phone, date: new Date(rec.ts).toISOString(), context: contextLines(rec, event), inputs: inputs };
-    if (rec.booking && (rec.booking.at || rec.booking.status)) {
-      out.context.push('부스 상담: ' + [rec.booking.status, channelLabel(rec.booking.channel), rec.booking.at ? rec.booking.at.replace('T', ' ') : '', rec.booking.counselor, rec.booking.memo].filter(Boolean).join(' · '));
-    }
-    return out;
+    var name = cleanText(rec.name, NAME_MAX) || ('부스_' + stamp(rec.ts));
+    var lines = contextLines(rec, event), bk = bookingLine(rec.booking), b = rec.booking || {};
+    inputs['client-name'] = name;
+    inputs['md-consult-topic'] = topicLine(rec, event);
+    inputs['cr-memo'] = ['[부스 1분 점검' + (event ? ' · ' + event : '') + ' · ' + ymdHm(rec.ts) + ']'].concat(lines, bk ? [bk] : []).join('\n').slice(0, 2000);
+    var booked = !!(b.at && /^\d{4}-\d{2}-\d{2}/.test(b.at));
+    if (booked && b.channel !== 'now') inputs['cr-next-date'] = b.at.slice(0, 10);
+    var caution = [], todo = [];
+    if ('a-other' in inputs || 'a-forex' in inputs) caution.push('원화 금융자산·외화표시 자산은 부스 설문의 구간 응답을 대표값(백만원)으로 옮긴 것입니다 — 실값이 아니니 자산현황에서 확인해 주세요.');
+    if (fxShare(a) === null) caution.push('외화 비중은 「잘 모르겠다」가 섞여 계산하지 않았습니다.');
+    caution.push('진료과·개원 여부는 부스에서 묻지 않았습니다 — 개원의 탭의 진료과는 「확인 필요」로 두었고 자동으로 채우지 않았습니다.');
+    todo.push('진료과 확인 — 개원의 탭 「진료과」에서 확인한 뒤 고르세요(성형외과 학회 참가자라도 진료과·개원 여부는 확인 사항).');
+    todo.push('생년월일·연 소득·상시근로자 수 — 부스에서 묻지 않았습니다.');
+    if (booked) todo.push(b.channel === 'now'
+      ? '현장 상담 ' + b.at.replace('T', ' ') + '(현장 10분) — 다음 점검일에는 넣지 않았습니다.'
+      : '상담 예약 ' + b.at.replace('T', ' ') + ' ' + channelLabel(b.channel) + ' — 상담 이력의 「다음 점검일」에 넣었습니다. 마무리 때 새 점검일로 덮어 주세요.');
+    var rec_ = ['최우선 확인: ' + pickLabel('q9', a.q9), '희망 방식: ' + pickLabel('q10', a.q10), '휴대전화: ' + fmtPhone(rec.phone)].concat(lines, bk ? [bk] : []);
+    return { source: 'booth', survey: 'booth-1min-v1', name: name, phone: fmtPhone(rec.phone), date: new Date(rec.ts).toISOString(),
+             context: { '주의': caution, '따로확인': todo, '문진기록': rec_ }, inputs: inputs };
   }
 
   /* ── AssetTect 콘솔 가져오기용 레코드 — records.js 「가져오기 (JSON)」 계약(assettect_records_export_v1 → data.schema
@@ -439,8 +478,8 @@
     encode: encode, decode: decode, encodeBooking: encodeBooking, decodeBooking: decodeBooking,
     fxShare: fxShare, fxLabel: fxLabel, axes: axes, ranked: ranked, summarize: summarize, fmtDur: fmtDur, durLabel: durLabel, DUR_VALID: DUR_VALID,
     ynLabel: ynLabel, bandLabel: bandLabel, pickLabel: pickLabel, pickCode: pickCode, channelLabel: channelLabel, fxTypeLabels: fxTypeLabels,
-    contextLines: contextLines, storePayload: storePayload, assettectRecord: assettectRecord, assettectExport: assettectExport,
-    cleanText: cleanText, cleanPhone: cleanPhone, utf8Bytes: utf8Bytes
+    contextLines: contextLines, storePayload: storePayload, topicLine: topicLine, assettectRecord: assettectRecord, assettectExport: assettectExport,
+    cleanText: cleanText, cleanPhone: cleanPhone, fmtPhone: fmtPhone, utf8Bytes: utf8Bytes
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 // [[CODEC:end]]
@@ -935,7 +974,7 @@
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function hhmm(ts) { var d = new Date(ts); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
   function ymd(d) { d = d || new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
-  function fmtPhone(p) { p = C.cleanPhone(p); return p.length === 11 ? p.slice(0, 3) + '-' + p.slice(3, 7) + '-' + p.slice(7) : p.length === 10 ? p.slice(0, 3) + '-' + p.slice(3, 6) + '-' + p.slice(6) : p; }
+  function fmtPhone(p) { return C.fmtPhone(p); }   // 정본은 CODEC(반입 payload 의 「휴대전화: 」 표기와 같은 함수)
   function noticeHtml(full) { return '<p class="basis">' + esc(C.NOTICE) + (full ? ' ' + esc(C.NOTICE2) : '') + '</p>'; }
   function setProg(i, n) { var p = $('prog'); if (i == null) { p.hidden = true; return; } p.hidden = false; $('progi').style.width = Math.round(i / n * 100) + '%'; }
   function render(html) { $('app').innerHTML = html; window.scrollTo(0, 0); }
