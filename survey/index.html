@@ -853,7 +853,7 @@ var LIFE_YEARS_END = 90;   // 앱 기대수명 기본값(c-life 90)과 같게 �
 var NOTICE = '이 설문은 자산 현황과 관심사를 파악하기 위한 것으로, 특정 금융상품의 권유·중개·알선이 아닙니다.';
 var CONSENT_VER = 'retire-consent-v1';
 
-/* 자산 22항목의 고정 순서 — 응답 QR 의 자산 마디가 이 순서로 한 글자씩 실린다 */
+/* 자산 21항목의 고정 순서 — 응답 QR 의 자산 마디가 이 순서로 한 글자씩 실린다 */
 var ASSET_IDS = [], ASSET_GI = [];
 GROUPS.forEach(function(g, gi){ g.items.forEach(function(it){ ASSET_IDS.push(it[0]); ASSET_GI.push(gi); }); });
 var PENS_CODE = { work:'w', region:'r', gov:'g', none:'n', unknown:'u' };
@@ -909,8 +909,19 @@ function check(text){
   var s = (h % 1296).toString(36);
   return s.length < 2 ? '0' + s : s;
 }
-function cleanText(s, max){ return String(s == null ? '' : s).replace(/[|\u0000-\u001f]/g, '').trim().slice(0, max); }
-function cleanPhone(s){ return String(s == null ? '' : s).replace(/[^0-9]/g, '').slice(0, 11); }
+/* 🚨 글자(코드포인트) 단위로 자른다 — UTF-16 단위로 자르면 경계에 걸친 이모지가 반쪽이 되어 encode 가 예외로 죽는다(QR·링크 없는 완료 화면).
+   짝 없는 반쪽은 버리고, 자른 뒤 끝 공백도 지운다(「가나다라마 바」→ 고객 JSON 과 QR JSON 의 성함이 갈렸다). */
+function cleanText(s, max){
+  var a = Array.from(String(s == null ? '' : s).replace(/[|\u0000-\u001f]/g, '').trim())
+    .filter(function(ch){ var c = ch.charCodeAt(0); return !(ch.length === 1 && c >= 0xD800 && c <= 0xDFFF); });
+  return a.slice(0, max).join('').trim();
+}
+/* 국제 표기(+82 10-1234-5678 · 자동완성이 넣는다)는 국내 표기로 바꾼다 — 숫자만 남기고 11자리에서 자르면 82101234567(끝자리 유실)이 됐다 */
+function cleanPhone(s){
+  var d = String(s == null ? '' : s).replace(/[^0-9]/g, '');
+  var m = /^82(1[016789][0-9]{7,8})$/.exec(d); if (m) d = '0' + m[1];
+  return d.slice(0, 11);
+}
 function numStr(s){ var t = String(s == null ? '' : s).replace(/[^0-9.]/g, ''); var m = /^\d*\.?\d*/.exec(t); return (m ? m[0] : '').slice(0, 8); }
 function pad2(n){ return (n < 10 ? '0' : '') + n; }
 function stamp(ts){ var d = new Date(ts); return d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '_' + pad2(d.getHours()) + pad2(d.getMinutes()); }
@@ -918,7 +929,7 @@ function ymdHm(ts){ var d = new Date(ts); return d.getFullYear() + '-' + pad2(d.
 function fmtPhone(p){ p = cleanPhone(p); return p.length === 11 ? p.slice(0, 3) + '-' + p.slice(3, 7) + '-' + p.slice(7) : p.length === 10 ? p.slice(0, 3) + '-' + p.slice(3, 6) + '-' + p.slice(6) : p; }
 function unpack(input, key){
   var s = String(input || '').trim();
-  var m = s.match(new RegExp('[?&]' + key + '=([A-Za-z0-9_-]+)'));
+  var m = s.match(new RegExp('[?&#]' + key + '=([A-Za-z0-9_-]+)'));   // 새 링크는 #r= · 이미 나간 ?r= 링크도 읽는다
   if (m) s = m[1];
   if (!/^[A-Za-z0-9_-]{8,}$/.test(s)) return null;
   var bytes = b64uDecode(s); if (!bytes) return null;
@@ -940,11 +951,11 @@ function emptyState(){
 function retIdx(st, id){ var s = st.sels[id]; if (!s || s.t !== 'opt') return null; var sc = scaleOf(id); return (sc[s.i] && sc[s.i][1] !== null) ? s.i : null; }
 
 /* ── retire-v3 응답 코덱 ──────────────────────────────────────────────────────
-   "3" | 성함(≤6) | 전화(0 또는 9~11자리) | 생년월일 YYYYMMDD | 짧은 답 15자 | 자산 22자 | 연금 | 소요초(36진) | 시각(분·36진) | 검사 2자
+   "3" | 성함(≤6) | 전화(0 또는 9~11자리) | 생년월일 YYYYMMDD | 짧은 답 15자 | 자산 21자 | 연금 | 소요초(36진) | 시각(분·36진) | 검사 2자
    짧은 답 = 비전 3 · 은퇴나이 1 · 생활비 1 · 두 갈래 2(a/b) · 생활 점검 5 · 먼저 볼 주제 1 · 희망 방식 1 · 동의 비트 1   ('.' = 답 없음)
    자산 = 항목마다 한 글자: 구간 번호(0~8) · '.' 모름/답 없음 · '-' 고르지 않은 유형 · '(값)' 직접 입력(앱 단위)
    연금 = '-' 유형 끔 · w/r(직장/지역),가입연도,가입나이,월보험료,안내서액,p|f · g(직역),직종번호,임용연도 · n 가입 안 함 · u 모름
-   → UTF-8 → base64url → ?r=   QR 상한(v10-M 213바이트, 주소 포함) — 넘치면 encodeFor 사다리가 성함·생년월일을 덜어 낸다 */
+   → UTF-8 → base64url → #r=   QR 상한(v10-M 213바이트, 주소 포함) — 넘치면 encodeFor 사다리가 성함·생년월일을 덜어 낸다 */
 function encode(st){
   var flags = st.vision.map(function(v){ return d1(v, 4); }).join('')
     + d1(retIdx(st, 'c-ret-age'), 9) + d1(retIdx(st, 'c-monthly'), 9)
@@ -979,7 +990,12 @@ function decode(input){
   st.name = cleanText(p[1], NAME_MAX);
   st.phone = cleanPhone(p[2]);
   if (st.phone && st.phone.length < 9) return null;
-  if (p[3]) { if (!/^\d{8}$/.test(p[3])) return null; st.birth = p[3].slice(0, 4) + '-' + p[3].slice(4, 6) + '-' + p[3].slice(6); }
+  if (p[3]) {
+    if (!/^\d{8}$/.test(p[3])) return null;
+    var by = +p[3].slice(0, 4), bm = +p[3].slice(4, 6), bd = +p[3].slice(6);
+    if (by < 1900 || by > 2100 || bm < 1 || bm > 12 || bd < 1 || bd > 31) return null;   // 99999999 같은 값이 반입 JSON 의 생년월일로 나갔다
+    st.birth = p[3].slice(0, 4) + '-' + p[3].slice(4, 6) + '-' + p[3].slice(6);
+  }
   var bad = false, chk = function(v){ if (v === undefined) bad = true; return v === undefined ? null : v; };
   for (var i = 0; i < 3; i++) st.vision[i] = chk(p1(f[i], 4));
   var ra = chk(p1(f[3], SCALE_RETAGE.length - 1)), lv = chk(p1(f[4], SCALE_LIVING.length - 1));
@@ -1011,15 +1027,21 @@ function decode(input){
   if (k !== ASSET_IDS.length || i !== a.length) return null;
   for (var g = 0; g < GROUPS.length; g++) { if (offSeen[g] && onSeen[g]) return null; if (offSeen[g]) st.off['g' + g] = true; }
   // 연금 마디
+  /* 🚨 연금 마디도 정규형만 받는다 — encode 가 쓰는 모양(numStr 를 거친 숫자)과 다르면 null.
+     numStr 로 고쳐 읽으면 검사 2자가 우연히 맞은 변조가 다른 숫자로 통과한다(안내서액 150 → 15 실측). */
   var q = p[6].split(','), t = q[0];
+  if ((t === '-' || t === 'n' || t === 'u' || t === '.') && q.length !== 1) return null;
   if (t === '-') st.off.pens = true;
   else if (t === 'w' || t === 'r') {
     if (q.length !== 6) return null;
+    for (var qi = 1; qi <= 4; qi++) if (numStr(q[qi]) !== q[qi]) return null;
+    if (q[5] !== 'p' && q[5] !== 'f') return null;
     st.pens.type = t === 'w' ? 'work' : 'region';
     st.pens.npsYear = numStr(q[1]); st.pens.npsAge = numStr(q[2]); st.pens.npsPay = numStr(q[3]); st.pens.npsKnown = numStr(q[4]);
     st.pens.npsKnownBasis = q[5] === 'f' ? 'future' : 'present';
   } else if (t === 'g') {
     if (q.length !== 3) return null;
+    if ((q[1] !== '' && !/^[0-9]$/.test(q[1])) || numStr(q[2]) !== q[2]) return null;
     st.pens.type = 'gov';
     var jb = q[1] === '' ? null : GOV_JOBS[+q[1]];
     if (q[1] !== '' && !jb) return null;
@@ -1027,22 +1049,27 @@ function decode(input){
   } else if (t === 'n') st.pens.type = 'none';
   else if (t === 'u') st.pens.type = 'unknown';
   else if (t !== '.') return null;
+  /* 소요(0~46655초)·응답 시각(분)도 encode 가 쓰는 모양과 범위만 받는다 — 터무니없는 시각이 들어오면 화면이 「NaN-NaN-NaN」을 그리고
+     반입용 복사·전체 내보내기가 예외로 멈췄다(레코드 한 건이 목록 전체를 막는다). 시각 범위는 2019~2133년 */
+  if (!/^[0-9a-z]{1,3}$/.test(p[7]) || !/^[0-9a-z]{1,6}$/.test(p[8])) return null;
   var dur = parseInt(p[7], 36), mins = parseInt(p[8], 36);
-  if (isNaN(dur) || isNaN(mins)) return null;
+  if (isNaN(dur) || isNaN(mins) || mins < 26000000 || mins > 86000000) return null;
   st.dur = dur; st.ts = mins * 60000;
   return st;
 }
 /* QR 한 장에 들어가도록 덜어 내는 사다리 — 성함 → 생년월일. 덜어 낸 것은 dropped 로 알린다(화면이 「상담 때 말씀해 주세요」).
    fits(url) 은 화면이 QR 인코더로 판정한다(이 블록은 인코더를 모른다). */
+/* 🚨 답은 주소의 **# 뒤**(#r=)에 싣는다. ?r= 는 쿼리라 링크를 여는 순간 성함·전화·자산이 요청 줄에 실려 호스팅 서버로 가고
+   (메신저의 링크 미리보기도 같은 주소를 가져간다), # 뒤는 브라우저가 서버로 보내지 않는다 — 화면의 「답은 서버로 보내지 않습니다」가 그래야 참이다. */
 function encodeFor(st, base, fits){
   var tries = [[], ['name'], ['name', 'birth']];
   for (var i = 0; i < tries.length; i++) {
     var s2 = JSON.parse(JSON.stringify(st));
     tries[i].forEach(function(k){ s2[k] = ''; });
-    var url = base + '?r=' + encode(s2);
+    var url = base + '#r=' + encode(s2);
     if (!fits || fits(url)) return { url: url, dropped: tries[i] };
   }
-  return { url: base + '?r=' + encode(st), dropped: null };   // QR 없이 링크만
+  return { url: base + '#r=' + encode(st), dropped: null };   // QR 없이 링크만
 }
 
 // ── 라벨 ──
@@ -1055,12 +1082,22 @@ function bandText(id, st){
   if (s.t === 'opt') return sc[s.i] ? sc[s.i][0] : null;
   return s.v ? s.v + ' (직접)' : null;
 }
+/* 대표값 → 고객이 누른 구간 이름. 은퇴 나이·생활비는 구간으로만 답하므로, 지면에는 대표값(「200만원 미만」→ 150)이 아니라
+   **누른 구간**을 적는다 — 대표값을 「답해 주신 숫자」로 적으면 고객이 답한 적 없는 숫자가 된다. 「200~300만」처럼 「만」으로 끝나면 「원」을 붙인다 */
+function bandLabel(id, v){
+  var sc = scaleOf(id); if (!sc || v == null) return null;
+  for (var i = 0; i < sc.length; i++) if (sc[i][1] !== null && sc[i][1] === +v) return sc[i][0].replace(/([0-9천])만$/, '$1만원');
+  return null;
+}
 function fmtDur(sec){ if (!(sec > 0)) return ''; var m = Math.floor(sec / 60), s = sec % 60; return (m ? m + '분 ' : '') + s + '초'; }
 
 /* ── 상담에서 먼저 볼 주제 1·2순위 — 판정이 아니라 「어디서부터 이야기할지」의 순서.
    1순위 = 고객이 고른 주제. 2순위 = 아래 단서 점수(동점은 TOPICS 순). 고르지 않았으면 점수 1·2위. ── */
 function topicScores(st){
-  var s = [1, 0, 0, 0, 0, 0], A = answersFromSels(st.sels), P = st.pens || {};
+  /* 🚨 끈 유형(off)의 옛 답은 세지 않는다 — 응답 QR 은 끈 유형을 싣지 않으므로, 여기서 세면 같은 응답인데
+     고객 화면과 상담자 화면의 주제 순서가 갈린다(/qa 2026-10-05: 연금 유형 「모름」을 고른 뒤 그 유형을 끄면 2순위가 달랐다) */
+  var s = [1, 0, 0, 0, 0, 0], A = answersFromSels(st.sels), off = st.off || {}, P = off.pens === true ? {} : (st.pens || {});
+  ASSET_IDS.forEach(function(id, k){ if (off['g' + ASSET_GI[k]] === true) delete A[id]; });
   if (st.life[0] === 2) s[3] += 2; else if (st.life[0] === 1) s[3] += 1;
   if (st.bal[0] === 'a') s[4] += 2;
   if (st.life[1] === 2) s[4] += 1;
@@ -1178,9 +1215,12 @@ function buildPayload(st, booking){
   if (ASSET_IDS.some(function(id){ return id in inputs; }) || 'ta-income-amt' in inputs)
     caution.push('자산·소득은 고객이 고른 구간의 대표값입니다(직접 적은 값 제외) — 자산현황에서 실값으로 바꿔 주세요.');
   if ('n-p-income' in inputs) caution.push('국민연금 소득은 월 보험료를 보험료율로 나눠 거꾸로 셈한 값입니다 — 가입내역 안내서로 확인해 주세요.');
+  /* 앱 입력 상한에 걸리는 값 — 앱이 말없이 상한으로 자르므로 상담자가 알 수 있게 적는다 */
+  if (answers['ta-income-amt'] > 3000) caution.push('월 소득을 ' + answers['ta-income-amt'] + '만원으로 적으셨습니다 — 앱 입력 상한 3,000만원으로 들어갑니다. 단위와 실값을 확인해 주세요.');
+  if (known > 300) caution.push('국민연금 예상 수령액을 월 ' + known + '만원으로 적으셨습니다 — 앱 입력 상한 300만원으로 넣었습니다. 단위를 확인해 주세요.');
   if (inputs['c-ret-age'] == null) todo.push('은퇴 나이 — 「아직 모름」으로 답했습니다.');
   if (inputs['c-monthly'] == null) todo.push('은퇴 후 월 생활비 — 「아직 모름」으로 답했습니다.');
-  if (!birth) todo.push('생년월일 — 적지 않았습니다(나이 계산에 필요).');
+  if (!birth) todo.push('생년월일 — 응답에 없습니다(적지 않았거나, 응답 QR 용량 때문에 빠졌을 수 있습니다 — 응답 링크에는 들어 있습니다). 나이 계산에 필요합니다.');
   LIFE.forEach(function(t, k){ if (st.life[k] === 2) todo.push(t + ' — 「아직」이라고 답했습니다.'); });
   if (st.bal[0] === 'a') todo.push('자녀 결혼·주택 자금 지원 — 규모와 시기를 확인해 주세요.');
   if (st.vision[0] === 3) todo.push('집 줄여 옮기기 — 시기와 예상 차액을 확인해 주세요.');
@@ -1189,7 +1229,9 @@ function buildPayload(st, booking){
     ? '오늘 바로 상담 ' + b.at.replace('T', ' ') + ' — 다음 점검일에는 넣지 않았습니다.'
     : '상담 예약 ' + b.at.replace('T', ' ') + ' ' + channelLabel(b.channel) + ' — 상담 이력의 「다음 점검일」에 넣었습니다. 마무리 때 새 점검일로 덮어 주세요.');
   var rec = (st.phone ? ['휴대전화: ' + fmtPhone(st.phone)] : []).concat(lines, bk ? [bk] : [],
-            st.phone ? ['동의: 개인정보 수집·이용, 상담 예약 연락' + (st.consent.m ? ', 마케팅 정보 수신' : '') + ' (' + CONSENT_VER + ')'] : []);
+            st.phone ? [(st.consent.c1 && st.consent.c2)
+              ? '동의: 개인정보 수집·이용, 상담 예약 연락' + (st.consent.m ? ', 마케팅 정보 수신' : '') + ' (' + CONSENT_VER + ')'
+              : '동의: 응답에 필수 동의 기록이 없습니다 — 연락 전에 동의를 다시 받아 주세요.'] : []);   // 전화 유무가 아니라 동의 비트를 적는다
   var payload = { name:name, phone:fmtPhone(st.phone), date:new Date(st.ts || Date.now()).toISOString(), source:'survey', survey:'retire-v3',
                   context:{ '주의': caution, '따로확인': todo, '문진기록': rec }, inputs:inputs };
   if(segs) payload.segs = segs;
@@ -1212,6 +1254,8 @@ function decodeBooking(input){
   var chan = null; CHANNELS.forEach(function(c){ if (c[2] === p[2]) chan = c[1]; });
   if (p[2] && !chan) return null;
   if (p[3] && !/^\d{12}$/.test(p[3])) return null;
+  if (p[3] && (+p[3].slice(4, 6) < 1 || +p[3].slice(4, 6) > 12 || +p[3].slice(6, 8) < 1 || +p[3].slice(6, 8) > 31 || +p[3].slice(8, 10) > 23 || +p[3].slice(10, 12) > 59)) return null;
+  if (!/^[0-9a-z]{1,2}$/.test(p[4])) return null;   // 길이(분) 0~1295 — 음수·터무니없는 값은 끝 시각이 시작보다 앞서게 만든다
   var at = p[3] ? p[3].slice(0, 4) + '-' + p[3].slice(4, 6) + '-' + p[3].slice(6, 8) + 'T' + p[3].slice(8, 10) + ':' + p[3].slice(10, 12) : '';
   var t = [p1(p[7][0], TOPICS.length), p1(p[7][1], TOPICS.length)];
   if (t[0] === undefined || t[1] === undefined) return null;
@@ -1226,17 +1270,25 @@ function bookingEnd(b){
 function bookingTitle(b){ return '은퇴 설계 상담' + (b.topics && b.topics.length ? ' — ' + TOPICS[b.topics[0]] : ''); }
 function bookingText(b, url){
   var when = b.at ? b.at.replace('T', ' ') : '일정은 담당 상담사가 연락드려 정합니다';
-  return (b.name ? b.name + '님, ' : '') + '은퇴 설계 상담 예약이 접수되었습니다. 방식: ' + (channelLabel(b.channel) || '-') + ' · 일시: ' + when
+  /* 일시가 없으면 「예약」이 아니다 — 보류·일정 미정으로 저장해도 「예약이 접수되었습니다」가 나갔다 */
+  return (b.name ? b.name + '님, ' : '') + (b.at ? '은퇴 설계 상담 예약이 접수되었습니다.' : '은퇴 설계 상담 신청이 접수되었습니다.') + ' 방식: ' + (channelLabel(b.channel) || '-') + ' · 일시: ' + when
     + (b.place ? ' · 장소: ' + b.place : '') + (b.counselor ? ' · 담당: ' + b.counselor : '') + '.' + (url ? ' 예약 카드: ' + url : '');
+}
+/* ICS(RFC 5545) — 글 값의 \ ; , 줄바꿈은 이스케이프하고, 한 줄은 75옥텟에서 접는다(이어지는 줄은 공백 한 칸 · 글자 중간을 자르지 않는다) */
+function icsEsc(t){ return String(t == null ? '' : t).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n'); }
+function icsFold(line){
+  var out = '', n = 0;
+  Array.from(String(line)).forEach(function(ch){ var b = utf8Bytes(ch).length; if (n + b > 75) { out += '\r\n '; n = 1; } out += ch; n += b; });
+  return out;
 }
 function icsFor(b, nowIso){
   if (!b.at) return null;
   var st = b.at.replace(/[-:]/g, '') + '00';
   var stampZ = String(nowIso || new Date().toISOString()).replace(/[-:]/g, '').slice(0, 15) + 'Z';
   return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//retire-survey//v3//KO', 'BEGIN:VEVENT', 'UID:retire-' + st + '-' + check(b.name + b.at) + '@survey',
-          'DTSTAMP:' + stampZ, 'DTSTART:' + st, 'DTEND:' + bookingEnd(b), 'SUMMARY:' + bookingTitle(b),
-          'DESCRIPTION:' + channelLabel(b.channel) + (b.counselor ? ' / 담당 ' + b.counselor : '') + ' / 준비: ' + PREP.join(', ')]
-    .concat(b.place ? ['LOCATION:' + b.place] : []).concat(['END:VEVENT', 'END:VCALENDAR']).join('\r\n');
+          'DTSTAMP:' + stampZ, 'DTSTART:' + st, 'DTEND:' + bookingEnd(b), 'SUMMARY:' + icsEsc(bookingTitle(b)),
+          'DESCRIPTION:' + icsEsc(channelLabel(b.channel) + (b.counselor ? ' / 담당 ' + b.counselor : '') + ' / 준비: ' + PREP.join(', '))]
+    .concat(b.place ? ['LOCATION:' + icsEsc(b.place)] : []).concat(['END:VEVENT', 'END:VCALENDAR']).map(icsFold).join('\r\n');
 }
 function gcalUrl(b){
   if (!b.at) return '';
@@ -1369,7 +1421,7 @@ function buildOrder(){
     html += '<div class="q">'
       + '<div class="q-head"><div class="q-label">'+label+'</div>'
       + '<div class="q-direct-wrap"><span class="q-value" data-id="'+id+'"></span></div></div>'
-      + '<input type="range" class="rng unset" data-id="'+id+'" min="0" max="'+(scale.length-2)+'" step="1" value="'+Math.floor((scale.length-2)/2)+'" aria-label="'+escHtml(label)+'" oninput="rngPick(this)">'
+      + '<input type="range" class="rng unset" data-id="'+id+'" min="0" max="'+(scale.length-2)+'" step="1" value="'+Math.floor((scale.length-2)/2)+'" aria-label="'+escHtml(label)+'" oninput="rngPick(this)" onclick="rngPick(this)">'
       + '<div class="opts" data-id="'+id+'">'
       + scale.map(function(opt,oi){ return '<button type="button" class="opt" data-i="'+oi+'" onclick="pick(this)">'+opt[0]+'</button>'; }).join('')
       + '</div>'
@@ -1466,26 +1518,37 @@ function npsStartAge(by){
    기간 끝은 앱 기대수명 기본값(LIFE_YEARS_END)과 같다. */
 function drawCalcViz(){
   var host = document.getElementById('calc-viz'); if (!host) return;
-  var age = instaAge((document.getElementById('f-birth').value||'').trim());
+  var bv = (document.getElementById('f-birth').value||'').trim();
+  var age = instaAge(bv);
   var ret = (answers['c-ret-age'] === undefined) ? null : +answers['c-ret-age'];
   var liv = (answers['c-monthly'] === undefined) ? null : +answers['c-monthly'];
+  /* 생년월일만으로 말할 수 있는 줄 — 생활비를 아직 안 골라도 보여 준다(생년월일 칸의 안내가 그렇게 약속한다).
+     은퇴 나이는 구간이라 대표값과 나이가 가까우면 「지났다」고 단정하지 않는다(retKindOf). 국민연금은 가입 여부를 아직 묻기 전이다 */
+  var ageLine = '';
+  if (age !== null) {
+    var by = parseInt(bv.slice(0,4), 10), parts = [], rk = retKindOf(age, ret);
+    if (rk) parts.push(rk === 'ahead' ? '은퇴까지 약 <b>' + (ret - age) + '년</b>' : rk === 'near' ? '고르신 은퇴 시점이 지금 나이와 가깝습니다' : '고르신 은퇴 나이를 지나셨습니다');
+    parts.push('국민연금에 가입하셨다면 받기 시작하는 나이 <b>' + npsStartAge(by) + '세</b>(출생연도 기준)');
+    ageLine = '<div class="viz-line">' + parts.join(' · ') + '</div>';
+  }
   if (ret === null || liv === null) {
-    host.innerHTML = '<div class="viz-k">은퇴 후 생활비 합계</div><div class="viz-note">은퇴 나이와 월 생활비를 고르시면 여기서 바로 계산됩니다. 「아직 모름」이어도 다음으로 넘어가실 수 있습니다.</div>';
+    host.innerHTML = '<div class="viz-k">은퇴 후 생활비 합계</div><div class="viz-note">은퇴 나이와 월 생활비를 고르시면 여기서 바로 계산됩니다. 「아직 모름」이어도 다음으로 넘어가실 수 있습니다.</div>' + ageLine;
     return;
   }
   var from = (age !== null) ? Math.max(ret, age) : ret;
   var useY = Math.max(0, LIFE_YEARS_END - from), saveY = (age !== null) ? Math.max(0, ret - age) : null;
+  if (useY <= 0) {   // 기준 나이를 지난 분 — 「합계 0만원 · 쓰는 0년」을 적지 않는다
+    host.innerHTML = '<div class="viz-k">은퇴 후 생활비 합계</div><div class="viz-note">이 계산은 ' + LIFE_YEARS_END + '세까지를 기준으로 합니다. 그 나이를 지나셔서 합계를 내지 않습니다 — 기간은 상담에서 함께 정합니다.</div>' + ageLine;
+    return;
+  }
   var total = liv * 12 * useY;
   var h = '<div class="viz-k">은퇴 후 생활비 합계 · 오늘 돈 · ' + LIFE_YEARS_END + '세까지</div>'
     + '<div class="viz-v">' + fmtMan(total) + '</div>'
     + '<div class="viz-bar">'
     + (saveY !== null && saveY > 0 ? '<span class="viz-save" style="flex-grow:'+saveY+'">모으는 '+saveY+'년</span>' : '')
     + '<span class="viz-use" style="flex-grow:'+Math.max(useY,1)+'">쓰는 '+useY+'년</span></div>'
-    + '<div class="viz-line">월 ' + liv.toLocaleString() + '만원 × 12개월 × ' + useY + '년</div>';
-  if (age !== null) {
-    var by = parseInt((document.getElementById('f-birth').value||'').slice(0,4), 10);
-    h += '<div class="viz-line">' + (saveY > 0 ? '은퇴까지 <b>' + saveY + '년</b> · ' : '이미 은퇴 나이를 지나셨습니다 · ') + '국민연금 받기 시작하는 나이 <b>' + npsStartAge(by) + '세</b>(출생연도 기준)</div>';
-  }
+    + '<div class="viz-line">월 ' + liv.toLocaleString() + '만원 × 12개월 × ' + useY + '년 <span style="font-weight:500">(고르신 구간의 대표값)</span></div>'
+    + ageLine;
   h += '<div class="viz-note">물가·연금·투자수익을 넣기 전 단순 곱셈입니다. 이 가운데 연금이 채우는 몫과 모자라는 몫은 상담에서 앱으로 계산합니다.</div>';
   host.innerHTML = h;
 }
@@ -1560,11 +1623,13 @@ function pensKnownBasis(btn){
   saveDraft();
 }
 function pensInput(){
-  pens.npsYear = document.getElementById('pens-nps-year').value;
-  pens.npsAge  = document.getElementById('pens-nps-age').value;
-  pens.npsPay  = document.getElementById('pens-nps-pay').value;
-  pens.npsKnown= document.getElementById('pens-nps-known').value;
-  pens.govYear = document.getElementById('pens-gov-year').value;
+  /* 🚨 응답 QR 은 이 칸들을 numStr 규칙(숫자와 소수점 · 8자)으로 싣는다. 화면이 다른 규칙으로 잡으면 고객 JSON 과 상담자가 받는
+     JSON 이 갈린다(/qa 2026-10-05: 월 보험료 -25 → 고객 쪽은 소득 없음, QR 쪽은 소득 556만원). 숫자·소수점이 아닌 글자가 섞이면 비운다. */
+  [['npsYear','pens-nps-year'],['npsAge','pens-nps-age'],['npsPay','pens-nps-pay'],['npsKnown','pens-nps-known'],['govYear','pens-gov-year']].forEach(function(p){
+    var el = document.getElementById(p[1]), raw = /^[0-9.]*$/.test(el.value) ? numStr(el.value) : '';
+    if (el.value !== '' && raw !== el.value) el.value = raw;
+    pens[p[0]] = raw;
+  });
   saveDraft();
 }
 
@@ -1612,10 +1677,15 @@ function onDirect(input){
   var id = input.getAttribute('data-id');
   var row = document.querySelector('.opts[data-id="'+id+'"]');
   if(row) Array.prototype.forEach.call(row.children, function(c){ c.classList.remove('sel'); });
-  var v = parseFloat(input.value);
-  if(input.value==='' || isNaN(v) || v<0){ delete answers[id]; delete sels[id]; updateValueDisplay(id); saveDraft(); return; }
+  /* 🚨 응답 QR·링크는 직접 입력을 **numStr 규칙(숫자와 소수점 · 8자)** 으로 싣는다. 화면이 다른 규칙으로 값을 잡으면
+     고객이 본 숫자와 상담자가 받는 숫자가 갈린다(/qa 2026-10-05: 300000000 → 링크에는 30000000 · 12345.678 → 12345.68 대 12345.67).
+     그래서 화면도 같은 규칙으로 자르고, 칸에 적힌 글자도 그 값으로 맞춘다. */
+  var raw = /^[0-9.]*$/.test(input.value) ? numStr(input.value) : '';   // 1e5 · 음수처럼 숫자·소수점이 아닌 글자가 섞이면 비운다
+  if(input.value !== '' && raw !== input.value) input.value = raw;
+  var v = parseFloat(raw);
+  if(raw==='' || isNaN(v) || v<0){ delete answers[id]; delete sels[id]; updateValueDisplay(id); saveDraft(); return; }
   answers[id] = Math.round(v * meta[id] * 100) / 100;
-  sels[id] = {t:'dir', v:input.value};
+  sels[id] = {t:'dir', v:raw};
   updateValueDisplay(id);
   saveDraft();
 }
@@ -1677,6 +1747,7 @@ function nextStep(){
   /* 확인 화면에서 「수정」으로 온 경우 — 중간 스텝을 다시 다 지나오게 하지 않고 곧장 돌려보낸다.
      ⚠️ order 는 위에서 catsel 을 지난 뒤 재구성됐을 수 있으므로 여기서 다시 찾는다. */
   if(backToSummary){
+    order = buildOrder();   // 수정하러 간 사이 유형을 켜고 껐을 수 있다 — 낡은 순서에는 다시 켠 유형의 스텝이 없어 그 유형이 전부 「모름」으로 나갔다
     var li = order.indexOf('last');
     if(li >= 0){ goStep(li); return; }
   }
@@ -1694,6 +1765,7 @@ function nextStep(){
 var backToSummary = false;   // 확인 화면에서 「수정」으로 빠져나간 상태인가
 
 function gotoToken(token){
+  order = buildOrder();
   var i = order.indexOf(String(token));
   if(i < 0) return;
   backToSummary = true;
@@ -1705,6 +1777,13 @@ function renderSummary(){
   var h = '';
   function row(k, v){
     return '<div class="sum-row"><span class="sum-k">'+escHtml(k)+'</span><span class="sum-v">'+v+'</span></div>';
+  }
+  /* 구간으로 답한 칸은 **누른 구간 이름**을 보여 준다 — 대표값(「20억 이상」→ 25.00억원)을 고객이 답한 숫자처럼 적지 않는다.
+     직접 적은 값만 숫자로 적는다. */
+  function sumVal(id, unit){
+    var s = sels[id], sc = SCALEMAP[id];
+    if (s && s.t === 'opt' && sc && sc[s.i]) { var lb = sc[s.i][0].replace(/([0-9천])만$/, '$1만원'); return lb + (unit === '만원' && /[0-9]/.test(lb) ? '/월' : ''); }
+    return fmtVal(answers[id], unit);
   }
   function sec(title, token, rowsHtml, emptyMsg){
     h += '<div class="sum-sec"><div class="sum-sec-h"><span class="sum-sec-t">'+escHtml(title)+'</span>'
@@ -1724,7 +1803,7 @@ function renderSummary(){
     var k = (it[0]==='c-ret-age') ? '은퇴 예정 나이' : '은퇴 후 월 생활비';
     rr += (answers[it[0]] === undefined)
         ? row(k, '<span style="color:var(--g);font-weight:600">아직 모름</span>')
-        : row(k, escHtml(fmtVal(answers[it[0]], it[2])));
+        : row(k, escHtml(sumVal(it[0], it[2])));
   });
   if(birth) rr += row('생년월일', escHtml(birth));
   sec('은퇴자금 계산기', RETIRE_STEP, rr);
@@ -1739,7 +1818,7 @@ function renderSummary(){
     var rows = '', unknown = 0;
     g.items.forEach(function(it){
       if(answers[it[0]] === undefined){ unknown++; return; }
-      rows += row(it[1], escHtml(fmtVal(answers[it[0]], g.unit)));
+      rows += row(it[1], escHtml(sumVal(it[0], g.unit)));
     });
     if(rows && unknown) rows += '<div class="sum-empty">그 밖에 '+unknown+'개 항목은 「모름」</div>';
     sec(g.title, String(gi+1), rows);
@@ -1776,7 +1855,10 @@ function renderSummary(){
   // 🚨 분모에 은퇴 계획 2문항을 더한다 — 안 더하면 그 답이 ansCnt 에만 잡혀 「모름·건너뜀」이 음수가 된다
   var total = RETIRE_ITEMS.length;
   GROUPS.forEach(function(g,gi){ if(catChecked['g'+gi]!==false) total += g.items.length; });
-  var ansCnt = Object.keys(answers).length;
+  /* 보이는 문항의 답만 센다 — 유형을 끄면 그 유형의 옛 답이 answers 에 남아 「답변한 항목」이 부풀었다 */
+  var ansCnt = 0;
+  RETIRE_ITEMS.forEach(function(it){ if(answers[it[0]] !== undefined) ansCnt++; });
+  GROUPS.forEach(function(g,gi){ if(catChecked['g'+gi]===false) return; g.items.forEach(function(it){ if(answers[it[0]] !== undefined) ansCnt++; }); });
   h += '<div class="sum-sec">'
      + row('답변한 항목', '<span class="sum-badge">'+ansCnt+'개</span>')
      + row('모름·건너뜀', '<span class="sum-badge" style="background:#f2f1ec;color:var(--g)">'+Math.max(0, total-ansCnt)+'개</span>');
@@ -1800,8 +1882,11 @@ function escHtml(s){
 // ── 자동 임시저장 (localStorage) ──
 var DRAFT_KEY = '__survey_draft';
 var __booted = false;   // init 중 goStep(0)이 기존 draft를 빈 값으로 덮어쓰는 것 방지
+/* 「이어서 작성 / 새로 시작」 배너가 떠 있는 동안은 저장하지 않는다 — 배너 아래 카드 하나만 눌러도 옛 초안이 빈 답으로 덮여
+   「이어서 작성」이 아무것도 되살리지 못했다(/qa 2026-10-05). 둘 중 하나를 고르면 풀린다. */
+var __draftPending = false;
 function saveDraft(){
-  if(!__booted) return;
+  if(!__booted || __draftPending) return;
   try{
     localStorage.setItem(DRAFT_KEY, JSON.stringify({
       name: document.getElementById('f-name').value||'',
@@ -1815,8 +1900,9 @@ function loadDraft(){
   try{ var d = JSON.parse(localStorage.getItem(DRAFT_KEY)||'null'); return d; }catch(e){ return null; }
 }
 function hasContent(d){
-  return d && (d.name || d.phone || (d.sels && Object.keys(d.sels).length) || (d.pens && d.pens.type)
-    || (d.v3 && (d.v3.vision.some(function(x){ return x !== null; }) || d.v3.topic !== null)));
+  var some = function(a){ return Array.isArray(a) && a.some(function(x){ return x !== null && x !== undefined; }); };   // 깨진 초안(v3 가 비어 있음)에도 죽지 않는다
+  return !!(d && (d.name || d.phone || d.birth || (d.sels && Object.keys(d.sels).length) || (d.pens && d.pens.type)
+    || (d.v3 && (some(d.v3.vision) || some(d.v3.bal) || some(d.v3.life) || (d.v3.topic !== null && d.v3.topic !== undefined) || (d.v3.chan !== null && d.v3.chan !== undefined)))));
 }
 function resumeDraft(){
   var d = loadDraft(); if(!d) { discardDraft(); return; }
@@ -1858,17 +1944,22 @@ function resumeDraft(){
     ['vision','bal','life'].forEach(function(f){ if(Array.isArray(d.v3[f]) && d.v3[f].length === v3[f].length) v3[f] = d.v3[f].slice(); });
     v3.topic = (d.v3.topic === undefined) ? null : d.v3.topic;
     v3.chan  = (d.v3.chan === undefined) ? null : d.v3.chan;
-    v3.startedAt = d.v3.startedAt || 0;
+    /* 소요 시간은 이어 쓴 시간만 잇는다 — 며칠 전 초안을 이으면 「응답 소요 4320분」이 찍혔다. 앞서 쓴 시간(시작 ~ 마지막 저장)만큼만 당긴다 */
+    var spent = (d.v3.startedAt && d.t > d.v3.startedAt) ? Math.min(d.t - d.v3.startedAt, 3600000) : 0;
+    v3.startedAt = Date.now() - spent;
     v3Restore();
   }
   drawCalcViz();
   order = buildOrder();
   document.getElementById('resume').style.display='none';
+  __draftPending = false;
   goStep(Math.min(d.step||0, order.length-1));
 }
 function discardDraft(){
   try{ localStorage.removeItem(DRAFT_KEY); }catch(e){}
   document.getElementById('resume').style.display='none';
+  __draftPending = false;
+  saveDraft();   // 배너가 떠 있는 동안 누른 답을 지금부터 저장한다
 }
 
 // 연락처·생년월일 입력 시에도 임시저장
@@ -1888,10 +1979,12 @@ function currentState(){
   // 동의는 전화가 있을 때만 의미가 있다 — 전화가 없으면 싣지 않는다
   st.consent = st.phone ? { c1: v3.consent.c1, c2: v3.consent.c2, m: v3.consent.m } : { c1:false, c2:false, m:false };
   st.sels = JSON.parse(JSON.stringify(sels));
-  st.pens = JSON.parse(JSON.stringify(pens));
+  st.pens = (catChecked.pens === false) ? emptyState().pens : JSON.parse(JSON.stringify(pens));   // 끈 유형은 응답 QR 에도 실리지 않는다 — 화면 상태도 같게
   CATS.forEach(function(c){ if(catChecked[c.key] === false) st.off[c.key] = true; });
-  st.ts = Date.now();
-  st.dur = v3.startedAt ? Math.round((st.ts - v3.startedAt) / 1000) : 0;
+  var now = Date.now();
+  st.ts = Math.floor(now / 60000) * 60000;   // 응답 QR 은 시각을 분 단위로, 소요를 46655초까지 싣는다 — 여기서 같은 모양으로 맞춰 두 길의 JSON 이 같게
+  st.dur = v3.startedAt ? Math.max(0, Math.min(46655, Math.round((now - v3.startedAt) / 1000))) : 0;
+  st.name = cleanText(st.name, NAME_MAX);
   return st;
 }
 
@@ -1964,7 +2057,7 @@ var INSTA_INCOME_GI = 5;
 function fmtMan(man){
   var a = Math.round(Math.abs(man));
   var sign = man < 0 ? '−' : '';
-  if(a >= 10000){ var e = a/10000; return sign + (e>=100 ? e.toFixed(0) : e.toFixed(1)).replace(/\.0$/,'') + '억원'; }
+  if(a >= 10000){ var e = a/10000; return sign + (e>=100 ? e.toFixed(0) : e.toFixed(2).replace(/\.?0+$/,'')) + '억원'; }
   return sign + a.toLocaleString() + '만원';
 }
 
@@ -1972,7 +2065,7 @@ function fmtMan(man){
 /* 요약의 재료 — 기본은 지금 화면의 답, 상담자 화면에서는 응답 QR 을 푼 상태(stateSrc)에서 읽는다.
    같은 함수가 두 화면을 그리므로 고객이 본 숫자와 상담자가 본 숫자가 갈리지 않는다. */
 function liveSrc(){
-  return { A: answers, isOff: function(k){ return catChecked[k] === false; }, pens: pens,
+  return { A: answers, isOff: function(k){ return catChecked[k] === false; }, pens: catChecked.pens === false ? {} : pens,   // stateSrc 와 같은 규칙
            birth: (document.getElementById('f-birth').value||'').trim(), name: (document.getElementById('f-name').value||'').trim() };
 }
 function stateSrc(st){
@@ -2008,6 +2101,17 @@ function instaAge(s){
   var t = new Date(), a = t.getFullYear() - (+m[1]);
   if((t.getMonth()+1) < (+m[2]) || ((t.getMonth()+1) === (+m[2]) && t.getDate() < (+m[3]))) a--;
   return (a >= 0 && a <= 120) ? a : null;
+}
+
+/** 은퇴 시점과 지금 나이의 관계 — 은퇴 나이는 구간(「60세 전후」·「70세 이후」)으로만 답하므로, 대표값과 나이가 가깝거나
+    맨 위 열린 구간이면 「지났다」고 단정하지 않는다(만 60세 재직자가 「60세 전후」를 고르면 지난 것이 아니다).
+    ahead 남음 · near 가깝거나 지났을 수 있음 · past 지남 · null 모름 */
+function retKindOf(age, retAge){
+  if (age === null || retAge === null) return null;
+  var d = retAge - age;
+  if (d > 0) return 'ahead';
+  var top = SCALE_RETAGE[SCALE_RETAGE.length - 2][1];
+  return (retAge >= top || d >= -2) ? 'near' : 'past';
 }
 
 /** 요약에 필요한 값을 한 곳에서 만든다 — 화면 카드와 이미지 저장이 **같은 함수**를 쓴다.
@@ -2050,12 +2154,45 @@ function instaData(src){
   var retAge = (A['c-ret-age'] === undefined) ? null : +A['c-ret-age'];
   var living = (A['c-monthly'] === undefined) ? null : +A['c-monthly'];
 
+  /* ── 화면·이미지가 함께 쓰는 표시 규칙 ── 🚨 「모름」뿐인 칸을 0만원으로 적지 않는다(0 은 「없다」는 답이다)
+     · 분류의 항목이 전부 모름 → 금액 대신 「확인 필요」
+     · 자산을 하나도 답하지 않음 → 순자산을 내지 않는다 · 대출이 전부 모름 → 순자산 대신 「자산 합계 (대출은 확인 전)」
+     · 비중은 통째로 모르는 분류가 하나라도 있으면 내지 않는다(분모가 비어 한 분류가 100% 가 된다)
+     · 저축률은 저축이 소득보다 작을 때만(구간 대표값끼리 나누면 같은 구간은 100%, 엇갈리면 300% 가 나온다) */
+  var NEED = '확인 필요';
+  var allUnk = function(x, n){ return !x.off && x.unknown === n; };
+  var catUnk = {}, anyCatUnk = false, assetNone = true, assetUnknown = 0;
+  INSTA_CATS.forEach(function(b){
+    catUnk[b.key] = allUnk(sums[b.key], b.ids.length); assetUnknown += sums[b.key].unknown;
+    if (catUnk[b.key]) anyCatUnk = true; else assetNone = false;
+  });
+  var loanUnk = allUnk(loan, INSTA_LOAN.ids.length);
+  var pctOk = !anyCatUnk && assetMan > 0;
+  var savePct = (incomeM > 0 && saveM != null && saveM < incomeM) ? Math.round(saveM / incomeM * 100) : null;
+  var rePct = pctOk ? Math.round(sums.re.man / assetMan * 100) : null;
+  var show = {
+    netK: (!assetNone && loanUnk) ? '자산 합계 (대출은 확인 전)' : '순자산 (자산 − 대출)',
+    net:  assetNone ? NEED : (loanUnk ? fmtMan(assetMan) : fmtMan(assetMan - loan.man)),
+    netS: '자산 ' + (assetNone ? NEED : fmtMan(assetMan)) + ' · 대출 ' + (loanUnk ? NEED : fmtMan(loan.man)),
+    cat: {}, pct: {}, loan: loanUnk ? NEED : fmtMan(loan.man),
+    rePct: rePct !== null ? rePct + '%' : (anyCatUnk ? NEED : '—'),
+    savePct: savePct !== null ? savePct + '%' : NEED,
+    pctPartial: pctOk && assetUnknown > 0,   // 비중을 냈지만 모름이 섞여 있다 — 「답해 주신 자산 기준」이라고 적는다
+    layers: layers.every(function(x){ return x === null; }) ? NEED : layers.filter(function(x){ return x === 1; }).length + ' / 3'   // 세 층을 다 모르면 「0 / 3」이 아니다
+  };
+  INSTA_CATS.forEach(function(b){
+    show.cat[b.key] = catUnk[b.key] ? NEED : fmtMan(sums[b.key].man);
+    show.pct[b.key] = (pctOk && !catUnk[b.key]) ? Math.round(sums[b.key].man / assetMan * 100) + '%' : '';
+  });
+
   return {
     name: src.name,
     sums: sums, loan: loan, assetMan: assetMan, netMan: assetMan - loan.man,
     incomeM: incomeM, saveM: saveM,
-    savePct: (incomeM > 0 && saveM != null) ? Math.round(saveM / incomeM * 100) : null,
-    rePct: (assetMan > 0) ? Math.round(sums.re.man / assetMan * 100) : null,
+    savePct: savePct, rePct: rePct, show: show,
+    retKind: retKindOf(age, retAge),
+    retLabel: retAge === null ? null : (bandLabel('c-ret-age', retAge) || retAge + '세'),
+    livingLabel: living === null ? null : (bandLabel('c-monthly', living) || living + '만원'),
     layers: layers,
     layerFilled: layers.filter(function(x){ return x === 1; }).length,
     layerUnknown: layers.filter(function(x){ return x === null; }).length,
@@ -2078,36 +2215,35 @@ function renderInstaReport(src, hostId){
   var h = '<div class="ir">'
     + '<div class="ir-h">MY POSITION TODAY</div>'
     + '<div class="ir-t">' + escHtml(nm ? nm + '님이 오늘 답해 주신 내용' : '오늘 답해 주신 내용') + '</div>'
-    + '<div class="ir-net"><div class="ir-net-k">순자산 (자산 − 대출)</div>'
-    +   '<div class="ir-net-v">' + fmtMan(netMan) + '</div>'
-    +   '<div class="ir-net-s">자산 ' + fmtMan(assetMan) + ' · 대출 ' + fmtMan(loan.man) + '</div></div>';
+    + '<div class="ir-net"><div class="ir-net-k">' + D.show.netK + '</div>'
+    +   '<div class="ir-net-v">' + D.show.net + '</div>'
+    +   '<div class="ir-net-s">' + D.show.netS + '</div></div>';
 
   INSTA_CATS.forEach(function(b){
-    var pct = (assetMan > 0) ? (' <span style="font-size:12px;color:var(--g);font-weight:600">' + Math.round(sums[b.key].man / assetMan * 100) + '%</span>') : '';
-    h += '<div class="ir-row"><span class="ir-k">' + b.label + '</span><span class="ir-v">' + fmtMan(sums[b.key].man) + pct + '</span></div>';
+    var pct = D.show.pct[b.key] ? (' <span style="font-size:12px;color:var(--g);font-weight:600">' + D.show.pct[b.key] + '</span>') : '';
+    h += '<div class="ir-row"><span class="ir-k">' + b.label + '</span><span class="ir-v">' + D.show.cat[b.key] + pct + '</span></div>';
   });
-  h += '<div class="ir-row last"><span class="ir-k">대출 잔액</span><span class="ir-v">' + fmtMan(loan.man) + '</span></div>';
+  h += '<div class="ir-row last"><span class="ir-k">대출 잔액</span><span class="ir-v">' + D.show.loan + '</span></div>';
 
-  // 지표 3칸 — 근거가 없는 칸은 숫자를 지어내지 않고 「확인 필요」로 둔다
-  var rePct = (assetMan > 0) ? Math.round(sums.re.man / assetMan * 100) + '%' : '—';
-  var savePct = (incomeM !== null && incomeM > 0 && saveM !== null) ? Math.round(saveM / incomeM * 100) + '%' : '확인 필요';
+  // 지표 3칸 — 근거가 없는 칸은 숫자를 지어내지 않고 「확인 필요」로 둔다(규칙은 instaData 의 show 한 곳)
+  var rePct = D.show.rePct, savePct = D.show.savePct;
   h += '<div class="ir-chips">'
     +   '<div class="ir-chip"><div class="ir-chip-k">부동산 비중</div><div class="ir-chip-v">' + rePct + '</div></div>'
     +   '<div class="ir-chip"><div class="ir-chip-k">월 저축률</div><div class="ir-chip-v">' + savePct + '</div></div>'
-    +   '<div class="ir-chip"><div class="ir-chip-k">연금 3층</div><div class="ir-chip-v">' + layerFilled + ' / 3</div></div>'
+    +   '<div class="ir-chip"><div class="ir-chip-k">연금 3층</div><div class="ir-chip-v">' + D.show.layers + '</div></div>'
     + '</div>';
 
   var lines = [];
   lines.push('연금 3층은 <b>공적연금 · 퇴직연금 · 개인연금</b>을 말합니다. 지금 <b>' + layerFilled + '개 층</b>이 확인됩니다'
              + (layerUnknown ? ' (' + layerUnknown + '개 층은 답변이 없어 확인이 필요합니다)' : '') + '.');
-  if(yearsLeft !== null){
-    lines.push(yearsLeft > 0
-      ? '적어 주신 은퇴 나이까지 <b>' + yearsLeft + '년</b> 남았습니다. 준비할 수 있는 기간이 그만큼입니다.'
-      : '적어 주신 은퇴 나이를 이미 지나셨습니다 — 모으는 단계가 아니라 <b>꺼내 쓰는 단계</b>의 설계가 필요합니다.');
-  } else if(retAge !== null){
-    lines.push('생년월일을 적어 주시면 은퇴까지 남은 기간을 정확히 계산해 드립니다.');
-  }
-  if(living !== null) lines.push('은퇴 후 필요 생활비는 <b>월 ' + living.toLocaleString() + '만원</b>으로 답해 주셨습니다.');
+  /* 은퇴 나이·생활비는 구간으로 고른 답이다 — 대표값을 「적어 주신 숫자」로 쓰지 않고 구간 이름을 적는다.
+     나이가 구간에 걸치면 「지났다」고 단정하지 않는다(retKindOf) */
+  var retLb = escHtml(D.retLabel || '');
+  if(D.retKind === 'ahead') lines.push('고르신 은퇴 나이(' + retLb + ')까지 약 <b>' + yearsLeft + '년</b> 남았습니다. 준비할 수 있는 기간이 그만큼입니다.');
+  else if(D.retKind === 'near') lines.push('고르신 은퇴 시점(' + retLb + ')이 지금 나이와 가깝습니다 — 이미 지나셨다면 모으는 단계가 아니라 <b>꺼내 쓰는 단계</b>의 설계가 필요합니다. 상담에서 시점부터 확인합니다.');
+  else if(D.retKind === 'past') lines.push('고르신 은퇴 나이(' + retLb + ')를 이미 지나셨습니다 — 모으는 단계가 아니라 <b>꺼내 쓰는 단계</b>의 설계가 필요합니다.');
+  else if(retAge !== null) lines.push('생년월일을 적어 주시면 은퇴까지 남은 기간을 계산해 드립니다.');
+  if(living !== null) lines.push('은퇴 후 필요 생활비는 <b>월 ' + escHtml(D.livingLabel) + '</b> 구간으로 답해 주셨습니다.');
   /* 🚨 「아직 모름」으로 남긴 축을 조용히 넘어가지 않는다 — 그 두 답이 없으면 「지금 준비로 어디까지
      가는가」를 계산할 수 없고, 그 사실을 안 적으면 보고서에 그 장이 왜 없는지 고객이 알 길이 없다. */
   if(retAge === null || living === null){
@@ -2121,7 +2257,7 @@ function renderInstaReport(src, hostId){
   h += '<div class="ir-note">' + lines.join('<br>') + '</div>';
 
   if(unknown > 0){
-    h += '<div class="ir-note">📝 <b>' + unknown + '개 항목</b>은 「모름」으로 남겨 두셨습니다 — 위 합계에는 넣지 않았습니다. 상담 때 함께 확인하면 숫자가 더 정확해집니다.</div>';
+    h += '<div class="ir-note">📝 <b>' + unknown + '개 항목</b>은 「모름」으로 남겨 두셨습니다 — 위 합계에는 넣지 않았습니다' + (D.show.pctPartial ? '(비중도 답해 주신 자산만으로 계산했습니다)' : '') + '. 상담 때 함께 확인하면 숫자가 더 정확해집니다.</div>';
   }
 
   h += '<div class="ir-cta">💎 답해 주신 내용으로 <b>「은퇴 준비 전문가 보고서」</b>를 작성해 드립니다.<br>'
@@ -2153,12 +2289,10 @@ function saveInstaImage(btn){
   lines.push('연금 3층은 공적연금 · 퇴직연금 · 개인연금을 말합니다.');
   lines.push('지금 ' + D.layerFilled + '개 층이 확인됩니다'
     + (D.layerUnknown ? ' (' + D.layerUnknown + '개 층은 확인 필요)' : '') + '.');
-  if (D.yearsLeft !== null) {
-    lines.push(D.yearsLeft > 0
-      ? '적어 주신 은퇴 나이까지 ' + D.yearsLeft + '년 남았습니다.'
-      : '적어 주신 은퇴 나이를 이미 지나셨습니다.');
-  }
-  if (D.living !== null) lines.push('은퇴 후 필요 생활비 — 월 ' + D.living.toLocaleString() + '만원');
+  if (D.retKind === 'ahead') lines.push('고르신 은퇴 나이(' + D.retLabel + ')까지 약 ' + D.yearsLeft + '년 남았습니다.');
+  else if (D.retKind === 'near') lines.push('고르신 은퇴 시점(' + D.retLabel + ')이 지금 나이와 가깝습니다.');
+  else if (D.retKind === 'past') lines.push('고르신 은퇴 나이(' + D.retLabel + ')를 이미 지나셨습니다.');
+  if (D.living !== null) lines.push('은퇴 후 필요 생활비 — 월 ' + D.livingLabel + ' 구간');
   if (D.unknown > 0) lines.push('※ ' + D.unknown + '개 항목은 「모름」으로 남겨 합계에서 뺐습니다.');
 
   //  머리 132 + 제목 100 + 순자산 244 + (분류 5줄 + 대출) 374 + 지표 180 + 설명 + 하단 176
@@ -2179,7 +2313,7 @@ function saveInstaImage(btn){
   // 배경 · 상단 바
   ctx.fillStyle = '#F8F7F4'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = TEAL; ctx.fillRect(0, 0, W, 132);
-  txt('상담 전 자산현황 설문', W/2, 84, F(42, 800), '#ffffff', 'center');
+  txt('은퇴 준비 설문', W/2, 84, F(42, 800), '#ffffff', 'center');
 
   var y = 132 + 74;
   txt(D.name ? (D.name + '님이 오늘 답해 주신 내용') : '오늘 답해 주신 내용', PAD, y, F(40, 800), TEAL_D);
@@ -2189,34 +2323,33 @@ function saveInstaImage(btn){
   ctx.fillStyle = '#e3f3f3';
   if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(PAD, y, W - PAD*2, 200, 22); ctx.fill(); }
   else ctx.fillRect(PAD, y, W - PAD*2, 200);
-  txt('순자산 (자산 − 대출)', W/2, y + 56, F(28, 700), TEAL_D, 'center');
-  txt(fmtMan(D.netMan), W/2, y + 124, F(72, 900), TEAL_D, 'center');
-  txt('자산 ' + fmtMan(D.assetMan) + '  ·  대출 ' + fmtMan(D.loan.man), W/2, y + 168, F(26, 500), GRAY, 'center');
+  txt(D.show.netK, W/2, y + 56, F(28, 700), TEAL_D, 'center');
+  txt(D.show.net, W/2, y + 124, F(72, 900), TEAL_D, 'center');
+  txt(D.show.netS, W/2, y + 168, F(26, 500), GRAY, 'center');
   y += 200 + 44;
 
   // 분류별 행
   INSTA_CATS.forEach(function(b){
-    var man = D.sums[b.key].man;
     txt(b.label, PAD, y + 34, F(32, 500), GRAY);
-    var amt = fmtMan(man);
+    var amt = D.show.cat[b.key];
     txt(amt, W - PAD, y + 34, F(34, 800), INK, 'right');
-    if (D.assetMan > 0) {
+    if (D.show.pct[b.key]) {
       ctx.font = F(34, 800); var wAmt = ctx.measureText(amt).width;
-      txt(Math.round(man / D.assetMan * 100) + '%', W - PAD - wAmt - 16, y + 34, F(26, 600), GRAY, 'right');
+      txt(D.show.pct[b.key], W - PAD - wAmt - 16, y + 34, F(26, 600), GRAY, 'right');
     }
     y += 58;
     ctx.strokeStyle = LINE; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(PAD, y - 12); ctx.lineTo(W - PAD, y - 12); ctx.stroke();
   });
   txt('대출 잔액', PAD, y + 34, F(32, 500), GRAY);
-  txt(fmtMan(D.loan.man), W - PAD, y + 34, F(34, 800), INK, 'right');
+  txt(D.show.loan, W - PAD, y + 34, F(34, 800), INK, 'right');
   y += 84;
 
   // 지표 3칸
   var cw = (W - PAD*2 - 32) / 3;
-  [['부동산 비중', D.rePct != null ? D.rePct + '%' : '—'],
-   ['월 저축률',   D.savePct != null ? D.savePct + '%' : '확인 필요'],
-   ['연금 3층',    D.layerFilled + ' / 3']].forEach(function(p, i){
+  [['부동산 비중', D.show.rePct],
+   ['월 저축률',   D.show.savePct],
+   ['연금 3층',    D.show.layers]].forEach(function(p, i){
     var x = PAD + i * (cw + 16);
     ctx.fillStyle = '#ffffff'; ctx.strokeStyle = LINE; ctx.lineWidth = 2;
     if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, cw, 132, 18); ctx.fill(); ctx.stroke(); }
@@ -2426,7 +2559,7 @@ function copyJson(){
 
 // 전화번호 자동 하이픈
 document.getElementById('f-phone').addEventListener('input', function(){
-  var v=this.value.replace(/[^0-9]/g,'').slice(0,11);
+  var v=cleanPhone(this.value);   // 코덱과 같은 규칙(+82 표기 → 010)
   if(v.length<4) this.value=v;
   else if(v.length<8) this.value=v.slice(0,3)+'-'+v.slice(3);
   else this.value=v.slice(0,3)+'-'+v.slice(3,7)+'-'+v.slice(7);
@@ -2435,7 +2568,7 @@ document.getElementById('f-phone').addEventListener('input', function(){
 
 // ── 초기화: 임시저장 복원 배너 ──
 // ══════════════════════════════════════════════════════════════════════════
-// 🧑‍💼 상담자 화면 — ?c=1(홈) · ?r=(응답 확인) · 예약 카드 ?b=(고객 폰)
+// 🧑‍💼 상담자 화면 — ?c=1(홈) · #r=(응답 확인) · 예약 카드 #b=(고객 폰) — 옛 ?r= · ?b= 링크도 읽는다
 //    부스(booth/index.html) 상담자 화면의 구조를 그대로 옮겼다: 기기 안에만 저장(localStorage) · 상담자 이름 없이는
 //    저장 안 함 · 같은 전화번호(없으면 같은 응답)는 1건 · 예약 확인 = 예약 카드 QR · 문자 · 공유 · 캘린더.
 //    다른 점: 슬롯이 행사 10분이 아니라 설계사 일정(SLOT) · 방식별 길이 · 대면 장소 칸 · 전화 없는 응답.
@@ -2484,7 +2617,15 @@ function cvSegBind(id, onPick){
   });
 }
 /* 레코드 키 — 전화가 있으면 전화, 없으면 응답 시각+검사값(같은 응답을 두 번 찍어도 1건) */
-function cvKey(st){ return st.phone ? 'p' + st.phone : 'r' + st.ts + '_' + check(encode(st)); }
+/* 레코드 키 — 전화 + 성함(부부가 같은 번호를 적어도 서로 덮지 않는다) · 전화가 없으면 응답 전체(같은 분의 다른 응답이 검사 2자 우연 일치로 겹치지 않게) */
+function cvKey(st){ return st.phone ? 'p' + st.phone + '_' + (st.name || '') : 'r' + encode(st); }
+/* 링크·QR 로 연 응답 — 이 기기에 같은 사람의 기록이 있으면 그 예약을 이어 받는다.
+   🚨 빈 예약으로 열면, 메모만 고쳐 「저장」해도 확정해 둔 예약이 지워지고 그 시간 칸이 풀렸다(/qa 2026-10-05). */
+function cvRecFor(st){
+  var k = cvKey(st), rec = { st: st };
+  cvRecords().forEach(function(r){ if (cvKey(r.st) === k && r.booking) rec.booking = r.booking; });
+  return rec;
+}
 function cvRecords(){ return cvLs(CV_REC, []); }
 function cvUpsert(rec){
   var list = cvRecords(), k = cvKey(rec.st), found = -1;
@@ -2492,13 +2633,14 @@ function cvUpsert(rec){
   if (found >= 0) {
     var old = list[found];
     if (!rec.booking && old.booking) rec.booking = old.booking;
-    rec.scannedAt = old.scannedAt || rec.scannedAt;
+    rec.scannedAt = rec.scannedAt || old.scannedAt;   // 다시 받은 응답은 목록 맨 위로
     list[found] = rec;
   } else list.push(rec);
   cvLsSet(CV_REC, list);
 }
 
 function cvHome(msg){
+  cvStopScan();
   cvShow('상담자 화면');
   var list = cvRecords().sort(function(x, y){ return (y.scannedAt || 0) - (x.scannedAt || 0); });
   var h = '<div class="sec"><div class="sec-title">상담자 화면</div>'
@@ -2507,7 +2649,7 @@ function cvHome(msg){
     + '<div class="row"><button type="button" class="btn p" id="b-scan">응답 QR 스캔</button></div>'
     + '<p class="hint">화면 안 스캔은 안드로이드 Chrome 에서 동작합니다. 안 되면 카메라 앱으로 QR을 찍어 열거나, 받은 링크를 아래에 붙여 넣으세요.</p>'
     + '<div id="scanbox"></div>'
-    + '<label class="f" for="c-link">받은 응답 링크 붙여넣기</label><input type="text" id="c-link" placeholder="https://…/survey/?r=…">'
+    + '<label class="f" for="c-link">받은 응답 링크 붙여넣기</label><input type="text" id="c-link" placeholder="https://…/survey/#r=…">'
     + '<div class="row"><button type="button" class="btn" id="b-open">열기</button></div></div>';
   h += '<div class="sec"><div class="sec-title">받은 응답 · ' + list.length + '건</div>';
   if (!list.length) h += '<p class="hint">아직 받은 응답이 없습니다.</p>';
@@ -2524,12 +2666,12 @@ function cvHome(msg){
   if (msg) cvToast(msg);
   cv$('c-name').addEventListener('input', function(){ try { localStorage.setItem(CV_CNS, this.value.trim()); } catch (e) {} });
   cv$('b-scan').onclick = cvStartScan;
-  cv$('b-open').onclick = function(){ var st = decode(cv$('c-link').value); if (!st) { cvToast('읽을 수 없는 링크입니다 — 잘리지 않았는지 확인해 주세요.'); return; } cvOpen({ st: st }, true); };
+  cv$('b-open').onclick = function(){ var st = decode(cv$('c-link').value); if (!st) { cvToast('읽을 수 없는 링크입니다 — 잘리지 않았는지 확인해 주세요.'); return; } cvOpen(cvRecFor(st), true); };
   Array.prototype.forEach.call(document.querySelectorAll('.cv .it'), function(b){ b.onclick = function(){ cvOpen(list[+b.getAttribute('data-i')], false); }; });
   if (list.length) {
     cv$('b-export').onclick = function(){
       var out = { source: 'retire-survey', survey: 'retire-v3', exportedAt: new Date().toISOString(), counselor: cvCounselor(), consentVersion: CONSENT_VER,
-                  records: cvRecords().map(function(r){ return { key: cvKey(r.st), scannedAt: r.scannedAt, booking: r.booking || null, payload: buildPayload(r.st, r.booking) }; }) };
+                  records: cvRecords().map(function(r){ var p = null; try { p = buildPayload(r.st, r.booking); } catch (e) {} return { key: cvKey(r.st), scannedAt: r.scannedAt, booking: r.booking || null, payload: p }; }) };
       var json = JSON.stringify(out, null, 1);
       cvDownload('retire-survey-' + cvYmd() + '.json', json);
       cvCopy(json, '파일로 내려받고 클립보드에도 복사했습니다.');
@@ -2542,13 +2684,15 @@ function cvHome(msg){
   }
 }
 
-var cvScanTimer = null, cvScanStream = null;
+var cvScanTimer = null, cvScanStream = null, cvScanSeq = 0;
 function cvStopScan(){
+  cvScanSeq++;   // 카메라 권한을 기다리는 중인 앞선 스캔은 버린다
   clearInterval(cvScanTimer); cvScanTimer = null;
   if (cvScanStream) { cvScanStream.getTracks().forEach(function(t){ t.stop(); }); cvScanStream = null; }
 }
 function cvStartScan(){
-  var box = cv$('scanbox');
+  cvStopScan();   // 두 번 눌러도 스트림·타이머가 하나만 남게
+  var box = cv$('scanbox'), my = cvScanSeq, warned = false;
   if (!('BarcodeDetector' in window) || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     box.innerHTML = '<p class="err">이 기기는 화면 안 스캔을 지원하지 않습니다. 카메라 앱으로 QR을 찍어 열거나, 아래 칸에 링크를 붙여 넣어 주세요.</p>'; return;
   }
@@ -2556,13 +2700,15 @@ function cvStartScan(){
   var det;
   try { det = new BarcodeDetector({ formats: ['qr_code'] }); } catch (e) { box.innerHTML = '<p class="err">QR 감지기를 만들 수 없습니다 — 카메라 앱을 이용해 주세요.</p>'; return; }
   navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false }).then(function(stream){
+    if (my !== cvScanSeq || !cv$('cam')) { stream.getTracks().forEach(function(t){ t.stop(); }); return; }
     cvScanStream = stream;
     var v = cv$('cam'); v.srcObject = stream; v.play();
     cvScanTimer = setInterval(function(){
       det.detect(v).then(function(codes){
         if (!codes || !codes.length) return;
-        var st = decode(codes[0].rawValue); if (!st) return;
-        cvStopScan(); cvOpen({ st: st }, true);
+        var st = decode(codes[0].rawValue);
+        if (!st) { if (!warned) { warned = true; cvToast('이 설문의 응답 QR 이 아닙니다 — 고객 화면의 「응답 QR」을 비춰 주세요.'); } return; }
+        cvStopScan(); cvOpen(cvRecFor(st), true);
       }).catch(function(){});
     }, 300);
     cv$('b-stop').onclick = function(){ cvStopScan(); box.innerHTML = ''; };
@@ -2574,7 +2720,7 @@ function cvMin(m){ return pad2(Math.floor(m / 60)) + ':' + pad2(m % 60); }
 
 function cvOpen(rec, fresh){
   cvStopScan();
-  if (fresh) rec.scannedAt = Date.now();
+  if (fresh) { rec.scannedAt = Date.now(); cvUpsert(rec); }   // 연 응답은 바로 목록에 남긴다 — 주소에서는 이미 지웠으므로, 보고만 나가면 다시 받을 길이 없었다
   var st = rec.st, bk = rec.booking || {}, tp = topics(st);
   var pref = st.chan === null ? null : CHANNELS[st.chan][1];
   var S = { channel: bk.channel || pref, status: bk.status || '응답 확인', heat: bk.heat || null, next: bk.next || null,
@@ -2593,8 +2739,8 @@ function cvOpen(rec, fresh){
     + '<div class="topic-card" style="margin:0 0 10px"><b>상담 시작 문장</b><br>' + escHtml(st.name ? st.name + '님, ' : '')
     + (st.topic !== null ? '먼저 확인하고 싶으신 것이 <b>' + escHtml(TOPICS[st.topic]) + '</b>이시군요. 그 순서로 보겠습니다.' : '오늘은 <b>' + escHtml(TOPICS[tp[0]]) + '</b>부터 보겠습니다.')
     + ' 오늘은 상품이 아니라 은퇴 시기·생활비·연금이 언제 얼마나 들어오는지를 먼저 확인합니다.</div>'
-    + cvSum('은퇴 나이', A['c-ret-age'] != null ? A['c-ret-age'] + '세 전후' : '아직 모름')
-    + cvSum('은퇴 후 월 생활비', A['c-monthly'] != null ? A['c-monthly'].toLocaleString() + '만원' : '아직 모름')
+    + cvSum('은퇴 나이', A['c-ret-age'] != null ? escHtml((bandLabel('c-ret-age', A['c-ret-age']) || A['c-ret-age'] + '세') + ' · 앱 입력 ' + A['c-ret-age'] + '세') : '아직 모름')
+    + cvSum('은퇴 후 월 생활비', A['c-monthly'] != null ? escHtml((bandLabel('c-monthly', A['c-monthly']) || A['c-monthly'] + '만원') + ' · 앱 입력 ' + A['c-monthly'] + '만원') : '아직 모름')
     + (st.birth ? cvSum('생년월일', escHtml(st.birth)) : '')
     + cvSum('공적연금', escHtml(pl || (st.off.pens === true ? '고르지 않음' : '모름')))
     + VISION.map(function(q, k){ return st.vision[k] === null ? '' : cvSum(q.title.replace(/\?$/, ''), escHtml(visionLabel(k, st.vision[k]))); }).join('')
@@ -2624,9 +2770,9 @@ function cvOpen(rec, fresh){
   function drawWhen(){
     var w = cv$('when');
     if (!S.channel) { w.innerHTML = ''; return; }
-    if (S.channel === 'now' && !S.date) S.date = cvYmd();
+    if (S.channel === 'now') S.date = cvYmd();   // 「오늘 바로」는 언제나 오늘 — 먼저 골라 둔 미래 날짜가 남아 「오늘 바로 2026-10-20」이 저장됐다
     var lbl = S.channel === 'now' ? '오늘 바로 — 시각' : '상담 날짜 (미정이면 비워 두세요)';
-    w.innerHTML = '<label class="f" for="r-date">' + lbl + '</label><input type="date" id="r-date" value="' + escHtml(S.date) + '"><div class="slots" id="slots"></div>'
+    w.innerHTML = '<label class="f" for="r-date">' + lbl + '</label><input type="date" id="r-date" value="' + escHtml(S.date) + '"' + (S.channel === 'now' ? ' disabled' : '') + '><div class="slots" id="slots"></div>'
       + (S.channel === 'meet' ? '<label class="f" for="r-place">장소 (' + PLACE_MAX + '자 이내)</label><input type="text" id="r-place" maxlength="' + PLACE_MAX + '" value="' + escHtml(S.place) + '" placeholder="예: 강남 사무실">' : '');
     cv$('r-date').addEventListener('change', function(){ S.date = this.value; S.slot = null; drawSlots(); });
     if (cv$('r-place')) cv$('r-place').addEventListener('input', function(){ S.place = this.value.trim(); });
@@ -2646,6 +2792,7 @@ function cvOpen(rec, fresh){
     var len = SLOT.dur[S.channel] || 30, out = '';
     for (var m = SLOT.start; m + len <= SLOT.end; m += SLOT.step) {
       var t = cvMin(m), taken = busy.some(function(x){ return m < x[1] && m + len > x[0]; });
+      if (taken && S.slot === t) S.slot = null;   // 칸을 고른 뒤 상담자 이름을 바꿔 겹치게 되면 선택을 푼다(이중 예약이 저장됐다)
       out += '<button type="button" class="slot' + (S.slot === t ? ' sel' : '') + (taken ? ' taken' : '') + '" data-t="' + t + '"' + (taken ? ' disabled' : '') + '>' + t + '</button>';
     }
     box.innerHTML = out;
@@ -2668,7 +2815,7 @@ function cvOpen(rec, fresh){
   }
   /* 예약 확인 수단은 저장 뒤에만 열린다 — 카드는 저장된 기록에서만 만든다 */
   function showAfter(){
-    var b = bookingObj(), url = baseUrl() + '?b=' + encodeBooking(b), text = bookingText(b, url);
+    var b = bookingObj(), url = baseUrl() + '#b=' + encodeBooking(b), text = bookingText(b, url);
     cv$('after').classList.remove('hidden');
     cv$('b-card').onclick = function(){
       var svg = SURVEY_QR.svg(url, { label: '예약 카드 QR', size: 260 });
@@ -2683,22 +2830,31 @@ function cvOpen(rec, fresh){
     };
   }
   cv$('b-cancel').onclick = function(){ cvHome(); };
-  cv$('b-save').onclick = function(){
+  /* 화면의 예약 칸 → 기록. 「저장」과 「반입용 복사」가 같이 쓴다.
+     🚨 복사가 마지막으로 **저장한** 예약만 실으면, 날짜·시각을 고르고 저장 없이 복사했을 때 다음 점검일·예약 줄이
+        조용히 빠진다(/qa 2026-10-05 실측 — 안내문은 「예약 일시가 있으면 다음 점검일로 들어갑니다」라고 말한다).
+     일시가 있으면 상담자 이름이 꼭 있어야 한다(일정 충돌 검사가 이름으로 묶인다). 일시 없는 복사는 이름 없이도 된다. */
+  function commit(needName){
     var cns = cv$('r-cns').value.trim();
-    if (!cns) { cvToast('상담자 이름을 먼저 적어 주세요 — 일정 충돌 검사가 이름으로 묶입니다.'); cv$('r-cns').focus(); cv$('r-cns').scrollIntoView({ block: 'center' }); return; }
-    try { localStorage.setItem(CV_CNS, cns); } catch (e) {}
     var at = (S.date && S.slot) ? S.date + 'T' + S.slot : '';
-    if (at && S.status === '응답 확인') S.status = '예약확정';
+    if (!cns && (needName || at)) { cvToast('상담자 이름을 먼저 적어 주세요 — 일정 충돌 검사가 이름으로 묶입니다.'); cv$('r-cns').focus(); cv$('r-cns').scrollIntoView({ block: 'center' }); return null; }
+    if (cns) { try { localStorage.setItem(CV_CNS, cns); } catch (e) {} }
+    if (at && S.status === '응답 확인') setStatus('예약확정');
     rec.booking = { channel: S.channel || '', at: at, dur: at ? (SLOT.dur[S.channel] || 30) : 0, place: S.channel === 'meet' ? cleanText(S.place, PLACE_MAX) : '',
                     status: S.status, heat: S.heat || '', next: S.next || '', counselor: cns, memo: cv$('r-memo').value.trim(), savedAt: new Date().toISOString() };
     cvUpsert(rec);
-    cvToast(at ? at.replace('T', ' ') + ' ' + channelLabel(S.channel) + ' — 저장했습니다. 예약 확인을 건네세요.' : '저장했습니다.');
+    return { at: at };
+  }
+  cv$('b-save').onclick = function(){
+    var r = commit(true); if (!r) return;
+    cvToast(r.at ? r.at.replace('T', ' ') + ' ' + channelLabel(S.channel) + ' — 저장했습니다. 예약 확인을 건네세요.' : '저장했습니다.');
     showAfter();
     cv$('after').scrollIntoView({ block: 'center' });
   };
   cv$('b-store').onclick = function(){
     if (!rec.scannedAt) rec.scannedAt = Date.now();
-    cvUpsert(rec);   // 복사만 하고 저장을 잊어도 목록에는 남는다
+    var r = commit(false); if (!r) return;   // 화면의 예약을 먼저 기록한다 — 복사한 내용 = 지금 화면
+    showAfter();
     cvCopy(JSON.stringify(buildPayload(st, rec.booking)), 'store-app 「상담 전 설문 불러오기」 칸에 붙여 넣으세요.');
   };
 }
@@ -2707,7 +2863,7 @@ function cvOpen(rec, fresh){
 function cvBookingCard(b){
   cvShow('예약 확인');
   var when = b.at ? b.at.replace('T', ' ') : '일정은 담당 상담사가 연락드려 정합니다';
-  cvRender('<div class="sec"><div class="sec-title">' + escHtml(b.name ? b.name + '님, ' : '') + '예약이 접수되었습니다</div>'
+  cvRender('<div class="sec"><div class="sec-title">' + escHtml(b.name ? b.name + '님, ' : '') + (b.at ? '예약이 접수되었습니다' : '상담 신청이 접수되었습니다') + '</div>'
     + cvSum('상담 방식', escHtml(channelLabel(b.channel) || '-'))
     + cvSum('일시', escHtml(when))
     + (b.place ? cvSum('장소', escHtml(b.place)) : '')
@@ -2722,28 +2878,39 @@ function cvBookingCard(b){
   }
 }
 
-function cvParam(name){ var m = (location.search || '').match(new RegExp('[?&]' + name + '=([^&]*)')); return m ? decodeURIComponent(m[1]) : null; }
+/* 주소의 ?… 와 #… 를 함께 읽는다(새 링크는 #r= · #b=, 이미 나간 링크는 ?r= · ?b=). 깨진 % 는 예외 대신 빈 값 — 부팅이 죽어 빈 화면이 됐다 */
+function cvParam(name){
+  var src = (location.search || '') + '&' + String(location.hash || '').replace(/^#/, '');
+  var m = src.match(new RegExp('[?&]' + name + '=([^&]*)')); if (!m) return null;
+  try { return decodeURIComponent(m[1]); } catch (e) { return ''; }
+}
+/* 이미 열린 화면에서 다른 응답·예약 링크를 누르면 # 뒤만 바뀌고 페이지는 다시 읽히지 않는다 — 그때는 새로 읽는다 */
+window.addEventListener('hashchange', function(){ if (/[#&](r|b)=/.test(location.hash || '')) location.reload(); });
 
-/* 부팅 — 갈래는 넷. ?r= · ?b= 은 읽은 직후 주소에서 지운다(히스토리·주소창에 답·연락처를 남기지 않는다). */
+/* 부팅 — 갈래는 넷. #r= · #b=(옛 ?r= · ?b=)은 읽은 직후 주소에서 지운다(히스토리·주소창에 답·연락처를 남기지 않는다). */
 (function init(){
   var r = cvParam('r'), b = cvParam('b'), c = cvParam('c');
   if (r !== null) {
     var st = decode(r);
     try { history.replaceState({}, '', location.pathname + '?c=1'); } catch (e) {}
     if (!st) { cvHome('읽을 수 없는 응답입니다 — 잘린 링크인지 확인해 주세요.'); return; }
-    cvOpen({ st: st }, true);
+    cvOpen(cvRecFor(st), true);
     return;
   }
   if (b !== null) {
     var bk = decodeBooking(b);
     try { history.replaceState({}, '', location.pathname); } catch (e) {}
     if (bk) { cvBookingCard(bk); return; }
+    /* 잘린 예약 카드 — 말없이 빈 설문 첫 화면을 여는 대신 알려 준다 */
+    cvShow('예약 확인');
+    cvRender('<div class="sec"><p class="err">예약 카드를 읽을 수 없습니다 — 링크가 잘렸을 수 있습니다. 보내 주신 상담사에게 다시 요청해 주세요.</p></div>');
+    return;
   }
   if (c === '1') { cvHome(); return; }
   order = buildOrder();
   goStep(0);
   var d = loadDraft();
-  if(hasContent(d)) document.getElementById('resume').style.display='block';
+  if(hasContent(d)) { document.getElementById('resume').style.display='block'; __draftPending = true; }
   __booted = true;
 })();
 </script>
