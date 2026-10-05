@@ -1099,6 +1099,14 @@ function bookingLine(b){
   if (!b || !(b.at || b.status)) return '';
   return '상담 예약: ' + [b.status, channelLabel(b.channel), b.at ? b.at.replace('T', ' ') : '', b.place, b.counselor ? '상담자 ' + b.counselor : '', b.memo].filter(Boolean).join(' · ');
 }
+/* 국민연금 보험료율 — 국민연금법 제88조(2025.3 개정, 2026.1.1 시행) 부칙의 연도별 요율.
+   ~2025년 9% → 2026년 9.5% → 매년 0.5%p ↑ → 2033년 이후 13%. 직장가입자 본인부담은 그 절반.
+   고객이 적은 「지금 내는 보험료」를 나누므로 응답 시점(st.ts)의 연도를 쓴다. */
+function npsRateFor(year){
+  if (!(year > 0)) year = new Date().getFullYear();
+  if (year <= 2025) return 0.09;
+  return Math.min(0.13, Math.round((9 + 0.5 * (year - 2025)) * 10) / 1000);
+}
 function buildPayload(st, booking){
   var name = cleanText(st.name, NAME_MAX) || ('설문_' + stamp(st.ts || Date.now()));
   var birth = /^\d{4}-\d{2}-\d{2}$/.test(st.birth || '') ? st.birth : '';
@@ -1136,8 +1144,9 @@ function buildPayload(st, booking){
     var pay = parseFloat(pens.npsPay);
     if(pay>0){
       pensNote += ' · 월 ' + pay + '만원 납입';
-      // 보험료율 9% (직장가입자 본인부담 4.5%) → 평균 기준소득월액 역산, 앱 범위 41~659만원
-      inputs['n-p-income'] = Math.min(Math.max(Math.round(pay / (pens.type==='work' ? 0.045 : 0.09)), 41), 659);
+      // 응답 연도의 법정 보험료율(직장가입자는 본인부담 절반) → 평균 기준소득월액 역산, 앱 범위 41~659만원
+      var npsRate = npsRateFor(new Date(st.ts || Date.now()).getFullYear());
+      inputs['n-p-income'] = Math.min(Math.max(Math.round(pay / (pens.type==='work' ? npsRate / 2 : npsRate)), 41), 659);
     }
     // 📬 공단 예상연금액 직접입력 — 앱 직접입력 모드 자동 활성(계산식보다 우선)
     var known = parseFloat(pens.npsKnown);
