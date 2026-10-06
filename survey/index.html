@@ -27,6 +27,7 @@
   .wrap{max-width:560px;margin:0 auto;padding:16px 14px 130px;}
 
   /* ── 이어서 작성 배너 ── */
+  .f2f-bar{background:#fff8dc;border:2px solid var(--kbyellow);border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:14px;line-height:1.5;color:#5c4a00;}
   .resume{display:none;background:#fff;border:2px solid var(--kbyellow);border-radius:14px;padding:14px;margin-bottom:14px;}
   .resume p{margin:0 0 10px;font-size:15px;font-weight:600;}
   .resume .r-row{display:flex;gap:8px;}
@@ -1235,6 +1236,15 @@ function buildPayload(st, booking){
   var payload = { name:name, phone:fmtPhone(st.phone), date:new Date(st.ts || Date.now()).toISOString(), source:'survey', survey:'retire-v3',
                   context:{ '주의': caution, '따로확인': todo, '문진기록': rec }, inputs:inputs };
   if(segs) payload.segs = segs;
+  /* ans — 글로만 가던 v3 문항의 **구조 판**(2026-10-06). 앱(_svyApplyAns)이 생애설계 칩·상담결과 띠·할 일로 옮긴다.
+     inputs 에 넣지 않는 이유는 위와 같다(엔진 계산에 근거 없는 점수를 흘리지 않는다) — 앱이 「켜기만」 한다.
+     값은 응답 QR 이 싣는 그대로(번호·a/b·null)라 고객 JSON 과 QR 을 거친 JSON 이 같다. */
+  payload.ans = { v:V3_VER, vision:st.vision.slice(0, 3), bal:st.bal.slice(0, 2), life:st.life.slice(0, 5),
+                  topic:(st.topic === null || st.topic === undefined) ? null : st.topic, topics:topics(st),
+                  /* skip — 「해당 없음」으로 건너뛴 자산 유형의 항목 id. 앱 보고서가 이것을 「모름」과 가른다(고르지 않은 유형 = 없다고 답한 것) */
+                  skip:ASSET_IDS.filter(function(id, k){ return st.off['g' + ASSET_GI[k]] === true; }),
+                  chan:(st.chan === null || st.chan === undefined || !CHANNELS[st.chan]) ? null : CHANNELS[st.chan][1],
+                  consent:{ c1:!!(st.consent && st.consent.c1), c2:!!(st.consent && st.consent.c2), m:!!(st.consent && st.consent.m), ver:CONSENT_VER } };
   return payload;
 }
 
@@ -2492,8 +2502,15 @@ function showDone(manual, payload, st){
   document.getElementById('done').style.display='block';
   var h2=document.getElementById('done-h2'); if(h2) h2.textContent='다 하셨습니다';
   var dp=document.getElementById('done-p');
-  if(dp) dp.innerHTML='아래 <b>응답 QR</b>을 상담사에게 보여 주세요.<br>멀리 계시면 <b>링크 보내기</b>로 카카오톡에 보내 주시면 됩니다.';
   try { renderResp(st); } catch(e){}
+  /* 머리말은 **응답 QR 이 실제로 그려졌는지**를 보고 정한다 — 답이 많아 QR 에 못 담은 화면에 「QR 을 찍으면」이라고 적지 않는다(/qa 2026-10-06) */
+  var hasQr = !!document.querySelector('#resp-box .qrbox');
+  var who = (window.__f2f && window.__f2f.counselor) ? escHtml(window.__f2f.counselor) + ' 상담사' : '상담사';
+  if(dp) dp.innerHTML = !hasQr
+    ? '아래 <b>링크 보내기</b>로 ' + (window.__f2f ? '<b>' + who + '</b>에게 ' : '상담사에게 ') + '답을 보내 주세요.'
+    : window.__f2f
+    ? '지금 이 화면을 <b>' + who + '</b>에게 보여 주세요.<br>상담사가 아래 <b>응답 QR</b>을 찍으면 답이 바로 넘어갑니다.'
+    : '아래 <b>응답 QR</b>을 상담사에게 보여 주세요.<br>멀리 계시면 <b>링크 보내기</b>로 카카오톡에 보내 주시면 됩니다.';
   window.scrollTo(0,0);   // 응답 QR 이 맨 위 — 결과 화면은 위에서 시작한다
   if(manual){
     var json = JSON.stringify(payload);
@@ -2907,6 +2924,15 @@ window.addEventListener('hashchange', function(){ if (/[#&](r|b)=/.test(location
     return;
   }
   if (c === '1') { cvHome(); return; }
+  /* 🤝 대면 진입(#f=1&p=상담사 이름 · 옛 ?f=1 도 읽는다 — cvParam 이 ? 와 # 를 함께 본다) — 상담사 앱 「📱 대면 QR」을 고객 폰 카메라로 찍은 경우.
+     문구만 바뀌고 코덱·답은 그대로다. 이름을 # 뒤에 싣는 이유는 응답 링크와 같다(서버 요청 줄에 실리지 않는다). */
+  if (cvParam('f') === '1') {
+    window.__f2f = { counselor: cleanText(cvParam('p') || '', CNS_MAX) };
+    var fb = document.createElement('div');
+    fb.className = 'f2f-bar';
+    fb.innerHTML = '🤝 ' + (window.__f2f.counselor ? '상담사 <b>' + escHtml(window.__f2f.counselor) + '</b>님과 ' : '상담사와 ') + '함께 작성 중입니다. 다 하시면 화면에 뜨는 <b>응답 QR</b>을 상담사에게 보여 주세요.';
+    var fw = document.getElementById('form'); if (fw) fw.insertBefore(fb, fw.firstChild);
+  }
   order = buildOrder();
   goStep(0);
   var d = loadDraft();
